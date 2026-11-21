@@ -141,6 +141,8 @@ public partial class MainWindow
         GitEmptyActions.IsVisible = status is null;
         GitEmptyActions.IsEnabled = gitOperation is null;
         GitRefreshButton.IsEnabled = gitOperation is null && gitStatusRead is null;
+        StatusBranchButton.IsEnabled = status is not null && gitOperation is null;
+        StatusFetchButton.IsEnabled = gitRemotes.Count > 0 && gitOperation is null;
         GitInitButton.IsVisible = canInitialize;
         GitOpenFolderButton.IsVisible = workspace is null;
         GitCloneButton.IsVisible = workspace is null || canInitialize;
@@ -167,6 +169,7 @@ public partial class MainWindow
         ToolTip.SetTip(GitBranchButton, $"Switch branch · {branch}\n{repository.Root}");
         var divergence = (status.Ahead == 0 ? "" : $"  ↑{status.Ahead}") + (status.Behind == 0 ? "" : $"  ↓{status.Behind}");
         BranchLabel.Text = branch + divergence;
+        ToolTip.SetTip(StatusBranchButton, $"Switch branch · {branch}");
         ConfigureGitSync(status, divergence);
         UpdateCommitEnabled();
         LayoutGitGroups();
@@ -270,6 +273,7 @@ public partial class MainWindow
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         gitOperation = cancellation;
         GitDetails.IsEnabled = GitEmptyActions.IsEnabled = GitRefreshButton.IsEnabled = GitReviewActions.IsEnabled = false;
+        StatusBranchButton.IsEnabled = StatusFetchButton.IsEnabled = false;
         GitStopButton.IsVisible = true;
         GitSummary.IsVisible = true;
         GitSummary.Text = progress;

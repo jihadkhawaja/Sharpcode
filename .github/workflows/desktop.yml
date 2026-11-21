@@ -1,9 +1,8 @@
 name: Desktop
 
 on:
-  push:
-  pull_request:
-  workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: read

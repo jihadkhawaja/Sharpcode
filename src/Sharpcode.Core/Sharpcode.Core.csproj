@@ -1,5 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.0.0" GeneratePathProperty="true" />
     <ProjectReference Include="../../external/AgentSpace/src/AgentSpace.Infrastructure/AgentSpace.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="Exists('$(PkgMicrosoft_CodeAnalysis_CSharp_Workspaces)/ThirdPartyNotices.rtf')">
+    <None Include="$(PkgMicrosoft_CodeAnalysis_CSharp_Workspaces)/ThirdPartyNotices.rtf" Link="licenses/Roslyn-ThirdPartyNotices.rtf"
+          CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

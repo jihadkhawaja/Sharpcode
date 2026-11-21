@@ -57,6 +57,8 @@ public partial class MainWindow : Window
         {
             gitRefreshAfterWrite.Stop();
             lifetime.Cancel();
+            ClearMarkdownPreview();
+            csharpSyntaxTimer.Stop();
             syntax?.Dispose();
             editorBackground?.Dispose();
             http.Dispose();
@@ -239,6 +241,8 @@ public partial class MainWindow : Window
             Key.G when control => GoToLineAsync,
             Key.B when primary => Immediate(() => SetSidebarVisible(!Sidebar.IsVisible)),
             Key.OemComma when primary => EditAppearanceAsync,
+            Key.F when e.KeyModifiers == (KeyModifiers.Shift | KeyModifiers.Alt) => FormatDocumentAsync,
+            Key.V when shifted && activeLanguage.IsMarkdown => Immediate(ToggleMarkdownPreview),
             Key.E when shifted => Immediate(ShowExplorer),
             Key.G when controlShift => RefreshGitPaneAsync,
             Key.Enter when primary && GitCommitMessage.IsKeyboardFocusWithin => CommitGitAsync,
@@ -278,6 +282,11 @@ public partial class MainWindow : Window
             new("New File", Action: Immediate(NewFile), Shortcut: $"{PrimaryLabel}N"),
             new("Open Recent Workspace", Action: OpenRecentAsync),
             new("Save All Files", Action: SaveAllAsync),
+            new("Change File Language", Action: ChooseLanguageAsync),
+            new("Format Document", Action: FormatDocumentAsync, Shortcut: "Shift+Alt+F"),
+            new("Toggle Markdown Preview", Action: Immediate(ToggleMarkdownPreview), Shortcut: $"{PrimaryLabel}Shift+V"),
+            new("Show Problems", Action: Immediate(() => ShowProblems(true))),
+            new("Check C# Project", Action: CheckCSharpProjectAsync),
             new("Search Workspace", Action: Immediate(ShowSearch), Shortcut: $"{PrimaryLabel}Shift+F"),
             new("Show File Explorer", Action: Immediate(ShowExplorer), Shortcut: $"{PrimaryLabel}Shift+E"),
             new("Show Source Control", Action: RefreshGitPaneAsync, Shortcut: "Ctrl+Shift+G"),

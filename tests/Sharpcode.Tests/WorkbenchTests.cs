@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.XUnit;
@@ -241,7 +242,9 @@ public sealed class WorkbenchTests
         await peer.StageAsync(null, token);
         await peer.CommitAsync("Second commit", token);
         await peer.PushAsync(await peer.StatusAsync(token), remote: null, token);
-        sync.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        var footerFetch = window.FindControl<Button>("StatusFetchButton")!;
+        Assert.True(footerFetch.IsEnabled);
+        footerFetch.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await UntilAsync(() => Equals(sync.Content, "Pull ↓1") && sync.IsEffectivelyEnabled, token);
         sync.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await UntilAsync(() => Equals(sync.Content, "Fetch…") && editor.Text == "Second\n", token);
@@ -255,6 +258,109 @@ public sealed class WorkbenchTests
         await UntilAsync(() => Equals(sync.Content, "Fetch…") && sync.IsEffectivelyEnabled, token);
         await peer.FetchAsync("origin", token);
         Assert.Equal(1, (await peer.StatusAsync(token)).Behind);
+        await GitRepositoryTests.RunGitAsync(path, token, "branch", "feature/status-bar");
+        window.FindControl<Button>("StatusBranchButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await UntilAsync(() => window.OwnedWindows.Count == 1, token);
+        var branches = window.OwnedWindows.Single();
+        branches.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "PickerFilter").Text = "feature/status-bar";
+        await UntilAsync(() => PickerSelection(branches)?.Label == "feature/status-bar", token);
+        Press(branches, Key.Enter);
+        await UntilAsync(() => window.FindControl<TextBlock>("BranchLabel")!.Text == "feature/status-bar", token);
+        window.Close();
+        await UntilAsync(() => !window.IsVisible, token);
+    }
+
+    [AvaloniaFact]
+    public async Task MarkdownPreviewUsesTheBufferAndMiddleClickClosesOnlyTheClickedTab()
+    {
+        using var data = new TestDirectory();
+        using var project = new TestDirectory();
+        using var settings = new SettingsOverride(Environment.GetEnvironmentVariable("SHARPCODE_DATA_DIR"));
+        Environment.SetEnvironmentVariable("SHARPCODE_DATA_DIR", data.Path);
+        var token = TestContext.Current.CancellationToken;
+        var path = Path.Combine(project.Path, "README.md");
+        const string markdown = "# Notebook\n\n**Readable** text with `inline code`.\n\n| Editor | Platform |\n| --- | --- |\n| Sharpcode | Desktop |\n\n```cs\nint value = 42;\n```\n";
+        await File.WriteAllTextAsync(path, markdown, token);
+        var window = new MainWindow(path);
+        window.Show();
+        var editor = window.FindControl<TextEditor>("Editor")!;
+        var language = window.FindControl<Button>("LanguageButton")!;
+        await UntilAsync(() => editor.Text == markdown && Equals(language.Content, "Markdown"), token);
+        editor.Document.Insert(2, "Unsaved ");
+        var previewButton = window.FindControl<Button>("MarkdownPreviewButton")!;
+        previewButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        var preview = window.FindControl<StackPanel>("MarkdownPreviewContent")!;
+        await UntilAsync(() => preview.Children.OfType<SelectableTextBlock>().Any(block =>
+            block.Inlines?.OfType<Run>().Any(run => run.Text == "Unsaved Notebook") == true) &&
+            preview.GetVisualDescendants().OfType<SelectableTextBlock>().Any(block => block.Text == "int value = 42;"), token);
+        Assert.False(editor.IsVisible);
+        Assert.Equal(markdown, await File.ReadAllTextAsync(path, token));
+        previewButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.True(editor.IsVisible);
+        Assert.Contains("Unsaved Notebook", editor.Text);
+
+        var primary = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
+        Press(window, Key.N, primary);
+        var tabs = window.FindControl<ListBox>("Tabs")!;
+        await UntilAsync(() => tabs.GetVisualDescendants().OfType<TextBlock>().Any(block => block.Text == "README.md •" && block.Bounds.Width > 0), token);
+        var previous = tabs.GetVisualDescendants().OfType<TextBlock>().Single(block => block.Text == "README.md •");
+        ClickAt(window, previous, new Point(5, previous.Bounds.Height / 2), MouseButton.Middle);
+        await UntilAsync(() => window.OwnedWindows.Count == 1, token);
+        Assert.StartsWith("Untitled", Assert.IsType<EditorTab>(tabs.SelectedItem).Title);
+        Assert.Equal(2, tabs.Items.Count);
+        Press(window.OwnedWindows.Single(), Key.Escape);
+        await UntilAsync(() => window.OwnedWindows.Count == 0, token);
+        Assert.Equal(2, tabs.Items.Count);
+        ClickAt(window, previous, new Point(5, previous.Bounds.Height / 2), MouseButton.Middle);
+        await UntilAsync(() => window.OwnedWindows.Count == 1, token);
+        var discard = window.OwnedWindows.Single().GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Discard"));
+        discard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await UntilAsync(() => tabs.Items.Count == 1, token);
+        Assert.StartsWith("Untitled", Assert.IsType<EditorTab>(tabs.SelectedItem).Title);
+        window.Close();
+        await UntilAsync(() => !window.IsVisible, token);
+    }
+
+    [AvaloniaFact]
+    public async Task CSharpProblemsShowLiveSyntaxAndProjectDiagnosticsAndFormattingIsUndoable()
+    {
+        using var data = new TestDirectory();
+        using var project = new TestDirectory();
+        using var settings = new SettingsOverride(Environment.GetEnvironmentVariable("SHARPCODE_DATA_DIR"));
+        Environment.SetEnvironmentVariable("SHARPCODE_DATA_DIR", data.Path);
+        var token = TestContext.Current.CancellationToken;
+        var path = Path.Combine(project.Path, "Notebook.cs");
+        const string source = "class Notebook{\nint Value=>\"bad\";\nvoid Note(){int unused;}\n}\n";
+        await File.WriteAllTextAsync(path, source, token);
+        await File.WriteAllTextAsync(Path.Combine(project.Path, "Notebook.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\"><PropertyGroup><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>", token);
+        var window = new MainWindow(path);
+        window.Show();
+        var editor = window.FindControl<TextEditor>("Editor")!;
+        var language = window.FindControl<Button>("LanguageButton")!;
+        await UntilAsync(() => editor.Text == source && Equals(language.Content, "C#"), token);
+        var problems = window.FindControl<ListBox>("ProblemList")!;
+        editor.Document.Insert(0, "class Incomplete {\n");
+        await UntilAsync(() => problems.Items.OfType<ProblemRow>().Any(row => row.IsLive && row.IsError), token);
+        editor.Undo();
+        await UntilAsync(() => problems.Items.Count == 0, token);
+
+        Press(window, Key.F, KeyModifiers.Shift | KeyModifiers.Alt);
+        await UntilAsync(() => editor.Text.Contains("int Value => \"bad\";", StringComparison.Ordinal), token);
+        Assert.NotEqual(source, editor.Text);
+        editor.Undo();
+        Assert.Equal(source, editor.Text);
+        window.FindControl<Button>("StatusProblemsButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        window.FindControl<Button>("CheckCSharpProjectButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await UntilAsync(() => problems.Items.OfType<ProblemRow>().Any(row => !row.IsLive && row.Code == "CS0029"), token,
+            TimeSpan.FromSeconds(35));
+        var error = Assert.Single(problems.Items.OfType<ProblemRow>(), row => row.Code == "CS0029");
+        Assert.True(error.IsError);
+        Assert.Equal(path, error.Problem.Path);
+        Assert.Contains(problems.Items.OfType<ProblemRow>(), row => !row.IsError && row.Code == "CS0168");
+        problems.SelectedItem = error;
+        Press(problems, Key.Enter);
+        await UntilAsync(() => editor.TextArea.Caret.Line == 2, token);
         window.Close();
         await UntilAsync(() => !window.IsVisible, token);
     }
@@ -374,6 +480,7 @@ public sealed class WorkbenchTests
         var window = new MainWindow(project.Path);
         window.Show();
         await UntilAsync(() => window.FindControl<Button>("WelcomeBrowse")!.IsVisible, token);
+        Assert.False(window.FindControl<Grid>("AgentPane")!.IsVisible);
 
         async Task<Window> OpenPickerAsync(string query)
         {
@@ -571,10 +678,10 @@ public sealed class WorkbenchTests
         return server;
     }
 
-    private static async Task UntilAsync(Func<bool> condition, CancellationToken cancellationToken)
+    private static async Task UntilAsync(Func<bool> condition, CancellationToken cancellationToken, TimeSpan? limit = null)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(8));
+        timeout.CancelAfter(limit ?? TimeSpan.FromSeconds(8));
         while (!condition())
             await Task.Delay(20, timeout.Token);
     }

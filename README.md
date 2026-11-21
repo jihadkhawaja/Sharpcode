@@ -31,7 +31,8 @@ Git supplies the quick-open index and source-control commands. Sharpcode can bro
 - Click a folder row to expand or collapse it, or click a file to open it. In workspace search, use Down to browse matches or Enter to jump to the first match.
 - The explorer bundles [Material Icon Theme artwork](src/Sharpcode/Assets/Material/NOTICE.md) for common languages, config files, and project folders.
 - Right-click in the editor for clipboard commands, find and replace, line comments, navigation, and agent actions for the active file or selection.
-- Use the toolbar to show the sidebar or agent. Narrow windows show one side panel at a time, and Sharpcode remembers which panels you have enabled.
+- Middle-click an editor tab to close it. Sharpcode prompts before closing a tab with unsaved changes.
+- The Agent pane starts hidden by default. Use **Agent** in the toolbar to open it. Narrow windows show one side panel at a time, and Sharpcode remembers which panels you have enabled.
 
 ## Appearance
 
@@ -43,12 +44,21 @@ Choose a PNG, JPEG, WebP, or BMP up to 24 MB for the editor background. **Fill**
 
 Open the **Git** tab or press **Ctrl+Shift+G** to use your installed Git CLI. The panel can initialize the open folder or clone from a GitHub HTTPS or SSH URL.
 
+Use the branch name in the status bar to switch branches, or click **Fetch** there to update remote refs without changing your files.
+
 1. Filter changes by file name or path. Select a file and press **Enter**, or click the row, to open its diff in the editor area. Use **+** or **−** on a row, the action in the diff header, or **Stage All** and **Unstage All** for the whole repository.
 2. Enter a message and click **Commit**, or press **Ctrl+Enter** (**⌘Return** on macOS) in the message field. Staging uses saved file contents. Commits use your configured Git author and signing settings.
 3. Use **Add Remote** with the URL of an existing GitHub repository. **Publish Branch** establishes tracking. The remote button then offers **Fetch**, **Pull**, or **Push** based on the branch's last known upstream status. Fetch updates the ahead and behind counts.
 4. Use the branch button to switch branches and **Git actions** to create branches, choose remote actions, or view recent commits. Pull uses fast-forward only. Save open changes before switching or pulling.
 
 Remote actions use your Git credential helper or SSH agent. [GitHub authentication for Git](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/about-authentication-to-github)
+
+## Language tools
+
+- Sharpcode detects the language by file name, extension, or recognizable content such as a shebang. Click the language in the status bar to override it for the current tab or return to **Auto Detect**.
+- Choose **Edit → Format Document** for C#, JSON, and XML, including Avalonia XAML and .NET project files. Formatting uses the editor's indentation and the document's line endings. Review the result before saving, or undo it in one step.
+- For Markdown files, switch between **Preview Markdown** and **Edit Markdown** above the editor. The preview uses the current buffer and renders Markdown links, tables, code blocks, and supported local images. External links open only when clicked.
+- C# files show live syntax errors as you type. Open **View → Problems** to see them and jump to a location. **Check C# Project** uses the installed .NET SDK to build the selected project and display compiler and analyzer diagnostics for saved files. You can stop the check from the Problems panel.
 
 ## Work with a model
 
@@ -85,6 +95,8 @@ The command palette includes **Git · Scan Commits with BusinessHarness**. It ru
 | Close Editor | Ctrl+W | ⌘W |
 | Next Editor | Ctrl+Tab | Ctrl+Tab |
 | Find / Replace in File | Ctrl+F / Ctrl+H | ⌘F / ⌥⌘F |
+| Format Document | Shift+Alt+F | ⇧⌥F |
+| Toggle Markdown Preview | Ctrl+Shift+V | ⇧⌘V |
 | Search Workspace | Ctrl+Shift+F | ⇧⌘F |
 | Toggle Sidebar | Ctrl+B | ⌘B |
 | Appearance | Ctrl+, | ⌘, |

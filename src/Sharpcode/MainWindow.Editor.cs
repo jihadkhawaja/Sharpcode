@@ -1,13 +1,14 @@
 using System.Collections.ObjectModel;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using AvaloniaEdit.Document;
-using AvaloniaEdit.Indentation;
-using AvaloniaEdit.Indentation.CSharp;
 using AvaloniaEdit.TextMate;
+using Avalonia.VisualTree;
 using Sharpcode.Core;
 using TextMateSharp.Grammars;
 
@@ -30,14 +31,16 @@ public partial class MainWindow
     private void InitializeEditor()
     {
         Tabs.ItemsSource = openTabs;
+        Tabs.AddHandler(PointerReleasedEvent, OnTabPointerReleased, RoutingStrategies.Tunnel, handledEventsToo: true);
         Editor.Options.IndentationSize = 4;
         Editor.Options.ConvertTabsToSpaces = true;
         Editor.Options.HighlightCurrentLine = true;
         Editor.Options.ShowBoxForControlCharacters = true;
         Editor.TextArea.Caret.PositionChanged += (_, _) => UpdateEditorStatus();
-        Editor.TextChanged += (_, _) => UpdateEditorStatus();
+        Editor.TextChanged += (_, _) => OnEditorTextChanged();
         ActualThemeVariantChanged += (_, _) => syntax?.SetTheme(Grammars.GetDefaultTheme());
         InitializeEditorContextMenu();
+        InitializeCodeProblems();
     }
 
     private async Task OpenFileAsync()
@@ -110,7 +113,7 @@ public partial class MainWindow
         CloseGitReview();
         if (tab == activeTab)
         {
-            if (tab is not null)
+            if (tab is not null && Editor.IsEffectivelyVisible)
                 Editor.TextArea.Focus();
             return;
         }
@@ -128,10 +131,8 @@ public partial class MainWindow
             Tabs.SelectedItem = tab;
         if (tab is null)
         {
-            syntax?.Dispose();
-            syntax = null;
-            syntaxScope = null;
             Editor.Document = new TextDocument();
+            UpdateEditorLanguage(null);
             EditorStatus.Text = "";
             return;
         }
@@ -141,7 +142,8 @@ public partial class MainWindow
         UpdateBreadcrumbAndSyntax(tab);
         Editor.CaretOffset = Math.Min(tab.Caret, tab.Document.TextLength);
         Editor.ScrollToVerticalOffset(tab.VerticalOffset);
-        Editor.TextArea.Focus();
+        if (Editor.IsEffectivelyVisible)
+            Editor.TextArea.Focus();
         UpdateEditorStatus();
     }
 
@@ -155,30 +157,22 @@ public partial class MainWindow
         var displayPath = tab.Path is null ? tab.Title : workspace?.Relative(tab.Path) ?? tab.Path;
         Breadcrumb.Text = displayPath.Replace('/', '›').Replace('\\', '›').Replace("›", "  ›  ");
         ToolTip.SetTip(Breadcrumb, tab.Path ?? tab.Title);
+        UpdateEditorLanguage(tab);
+    }
 
-        var extension = Path.GetExtension(tab.Path);
-        Editor.TextArea.IndentationStrategy = extension == ".cs"
-            ? new CSharpIndentationStrategy(Editor.Options) : new DefaultIndentationStrategy();
-
-        // Large documents use the same virtualized editor with plain text rendering.
-        string? scope = null;
-        if (tab.Document.TextLength <= 2_000_000 && tab.Document.LineCount <= 100_000 && !string.IsNullOrEmpty(extension))
+    private void OnEditorTextChanged()
+    {
+        UpdateEditorStatus();
+        if (activeTab is { LanguageOverride: null } tab && string.IsNullOrEmpty(Path.GetExtension(tab.Path)) &&
+            tab.Document.TextLength <= 4_096 && EditorLanguage.Detect(tab.Path,
+                tab.Document.GetText(0, Math.Min(1_024, tab.Document.TextLength)), Grammars) != activeLanguage.Id)
         {
-            if (Grammars.GetLanguageByExtension(extension) is { } language)
-                scope = Grammars.GetScopeByLanguageId(language.Id);
-        }
-        if (syntaxScope == scope)
-            return;
-        syntaxScope = scope;
-        if (scope is null)
-        {
-            syntax?.Dispose();
-            syntax = null;
+            UpdateEditorLanguage(tab);
             return;
         }
-        syntax ??= Editor.InstallTextMate(Grammars, exceptionHandler: exception =>
-            Dispatcher.UIThread.Post(() => Status($"Syntax highlighting: {exception.Message}")));
-        syntax.SetGrammar(scope);
+        if (MarkdownPreviewPane.IsVisible)
+            UpdateMarkdownSurface();
+        QueueCSharpSyntaxCheck(documentChanged: true);
     }
 
     private void UpdateEditorStatus()
@@ -285,6 +279,7 @@ public partial class MainWindow
     {
         if (activeTab is null || replace && Editor.IsReadOnly)
             return;
+        ShowMarkdownSource();
         Editor.ApplyTemplate();
         var panel = Editor.SearchPanel;
         if (panel is null)
@@ -310,6 +305,7 @@ public partial class MainWindow
     {
         if (activeTab is not { } tab)
             return;
+        ShowMarkdownSource();
         var target = tab.Document.GetLineByNumber(Math.Clamp(line, 1, tab.Document.LineCount));
         var position = Math.Clamp(column, 1, target.Length + 1);
         Editor.Select(target.Offset + position - 1, 0);
@@ -326,7 +322,7 @@ public partial class MainWindow
     {
         if (activeTab is not { } tab || Editor.IsReadOnly)
             return;
-        var prefix = LineCommentPrefix(tab.Path);
+        var prefix = LineCommentPrefix(activeLanguage.Id);
         if (prefix is null)
         {
             Status("Line comments are unavailable for this file type.");
@@ -357,12 +353,12 @@ public partial class MainWindow
         }
     }
 
-    private static string? LineCommentPrefix(string? path) => Path.GetExtension(path)?.ToLowerInvariant() switch
+    private static string? LineCommentPrefix(string language) => language switch
     {
-        ".py" or ".ps1" or ".sh" or ".rb" or ".yml" or ".yaml" or ".toml" or ".r" => "#",
-        ".sql" or ".lua" => "--",
-        ".cs" or ".fs" or ".js" or ".ts" or ".jsx" or ".tsx" or ".go" or ".rs" or ".cpp" or ".c" or ".h" or
-            ".hpp" or ".java" or ".kt" or ".swift" or ".dart" or ".scala" or ".zig" => "//",
+        "python" or "powershell" or "shellscript" or "ruby" or "yaml" or "toml" or "r" => "#",
+        "sql" or "lua" => "--",
+        "csharp" or "fsharp" or "javascript" or "typescript" or "javascriptreact" or "typescriptreact" or "go" or "rust" or
+            "cpp" or "c" or "java" or "kotlin" or "swift" or "dart" or "scala" or "zig" or "jsonc" => "//",
         _ => null
     };
 
@@ -379,6 +375,14 @@ public partial class MainWindow
     private async void OnSaveAll(object? sender, RoutedEventArgs e) => await TryAsync(SaveAllAsync);
     private async void OnCloseTab(object? sender, RoutedEventArgs e) => await TryAsync(() => CloseTabAsync(activeTab));
     private async void OnCloseSpecificTab(object? sender, RoutedEventArgs e) => await TryAsync(() => CloseTabAsync((sender as Control)?.DataContext as EditorTab));
+    private async void OnTabPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (e.InitialPressMouseButton != MouseButton.Middle || e.Source is not Visual source ||
+            source.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is not EditorTab tab)
+            return;
+        e.Handled = true;
+        await TryAsync(() => CloseTabAsync(tab));
+    }
     private void OnTabChanged(object? sender, SelectionChangedEventArgs e) { if (Tabs.SelectedItem is EditorTab tab) ActivateTab(tab); }
     private void OnUndo(object? sender, RoutedEventArgs e) { if (!Editor.IsReadOnly) Editor.Undo(); }
     private void OnRedo(object? sender, RoutedEventArgs e) { if (!Editor.IsReadOnly) Editor.Redo(); }

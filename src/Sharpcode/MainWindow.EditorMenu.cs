@@ -17,6 +17,7 @@ public partial class MainWindow
         var replace = EditorMenuItem("Replace in File", Immediate(ShowReplace));
         var comment = EditorMenuItem("Toggle Line Comment", Immediate(ToggleComment));
         var goToLine = EditorMenuItem("Go to Line…", GoToLineAsync, new(Key.G, KeyModifiers.Control));
+        var format = EditorMenuItem("Format Document", FormatDocumentAsync);
         var ask = EditorMenuItem("Ask Agent About This File", Immediate(AskAboutEditor));
         var suggest = EditorMenuItem("Suggest Code at Cursor", SuggestAsync);
 
@@ -26,7 +27,7 @@ public partial class MainWindow
             {
                 undo, redo, new Separator(),
                 cut, copy, paste, selectAll, new Separator(),
-                find, replace, comment, goToLine, new Separator(),
+                find, replace, comment, goToLine, format, new Separator(),
                 ask, suggest
             }
         };
@@ -46,7 +47,8 @@ public partial class MainWindow
             paste.IsEnabled = editable && Editor.CanPaste;
             selectAll.IsEnabled = Editor.Document.TextLength > 0;
             replace.IsEnabled = editable;
-            comment.IsEnabled = editable && LineCommentPrefix(activeTab.Path) is not null;
+            comment.IsEnabled = editable && LineCommentPrefix(activeLanguage.Id) is not null;
+            format.IsEnabled = editable && Sharpcode.Core.DocumentFormatting.Supports(activeLanguage.Id);
             ask.Header = Editor.SelectionLength > 0 ? "Ask Agent About This Selection" : "Ask Agent About This File";
             ask.IsEnabled = CanAttachActiveEditor;
             suggest.IsEnabled = editable && CanAttachActiveEditor && agentCancellation is null && !agentApplying && !switchingWorkspace;

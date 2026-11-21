@@ -9,12 +9,14 @@ public sealed class WorkspaceTests : IDisposable
     private readonly DirectoryInfo folder = Directory.CreateTempSubdirectory("sharpcode-");
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
-    [Fact]
-    public void OlderPreferencesKeepBothPanelsEnabled()
+    [Theory]
+    [InlineData("""{"Model":{"Provider":3,"Model":"fixture"}}""", false)]
+    [InlineData("""{"Model":{"Provider":3,"Model":"fixture"},"ShowAgent":true}""", true)]
+    public void PreferencesHideAgentByDefaultAndHonorSavedVisibility(string json, bool showAgent)
     {
-        var settings = JsonSerializer.Deserialize<Preferences>("""{"Model":{"Provider":3,"Model":"fixture"}}""")!;
+        var settings = JsonSerializer.Deserialize<Preferences>(json)!;
         Assert.True(settings.ShowSidebar);
-        Assert.True(settings.ShowAgent);
+        Assert.Equal(showAgent, settings.ShowAgent);
         Assert.Equal("fixture", settings.Model.Model);
     }
 

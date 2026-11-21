@@ -52,6 +52,7 @@
           <MenuItem Header="Undo" Click="OnUndo" />
           <MenuItem Header="Redo" Click="OnRedo" />
           <MenuItem Header="Find in File" Click="OnFind" />
+          <MenuItem Header="Format Document" Click="OnFormatDocument" />
           <MenuItem Header="Toggle Line Comment" Click="OnToggleComment" />
           <MenuItem Header="Go to Line…" Click="OnGoToLine" />
         </MenuItem>
@@ -59,6 +60,9 @@
           <MenuItem Header="Explorer" Click="OnExplorer" />
           <MenuItem Header="Search Workspace" Click="OnSearch" />
           <MenuItem Header="Source Control" Click="OnGit" />
+          <MenuItem x:Name="MarkdownPreviewMenu" Header="Markdown Preview" Click="OnMarkdownPreview" IsEnabled="False" />
+          <MenuItem Header="Problems" Click="OnProblems" />
+          <MenuItem Header="Check C# Project…" Click="OnCheckCSharpProject" />
           <MenuItem Header="Command Palette" Click="OnCommandPalette" />
           <MenuItem Header="Local Commands" Click="OnToggleOutput" />
           <Separator />
@@ -245,14 +249,22 @@
             <Button Grid.Column="1" Classes="quiet" Content="+" Click="OnNewFile" FontSize="19"
                     HorizontalAlignment="Center" AutomationProperties.Name="New file" />
           </Grid>
-          <Border Grid.Row="1" BorderBrush="{DynamicResource Divider}" BorderThickness="0,1,0,1" Padding="14,0">
-            <TextBlock x:Name="Breadcrumb" Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          <Border Grid.Row="1" BorderBrush="{DynamicResource Divider}" BorderThickness="0,1,0,1" Padding="14,0,8,0">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+              <TextBlock x:Name="Breadcrumb" Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              <Button Grid.Column="1" x:Name="MarkdownPreviewButton" Classes="quiet" IsVisible="False" Padding="8,3"
+                      Content="Preview Markdown" Click="OnMarkdownPreview" />
+            </Grid>
           </Border>
           <editor:TextEditor x:Name="Editor" Grid.Row="2" Background="Transparent" Foreground="{DynamicResource Ink}"
                              FontFamily="{StaticResource Mono}" ShowLineNumbers="True" Margin="0,5,0,0"
                              LineNumbersForeground="{DynamicResource Quiet}"
                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                              AutomationProperties.Name="Code editor" />
+          <ScrollViewer x:Name="MarkdownPreviewPane" Grid.Row="2" IsVisible="False" Background="{DynamicResource Canvas}"
+                        HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="Markdown preview">
+            <StackPanel x:Name="MarkdownPreviewContent" Margin="25,22" MaxWidth="840" Spacing="12" />
+          </ScrollViewer>
           <Border x:Name="SuggestionPane" Grid.Row="3" IsVisible="False" Background="{DynamicResource Raised}"
                   BorderBrush="{DynamicResource Divider}" BorderThickness="0,1,0,0" Padding="12">
             <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="5">
@@ -360,6 +372,31 @@
             </Grid>
           </Grid>
         </Border>
+        <Border Grid.Row="1" x:Name="ProblemsPane" IsVisible="False" Height="225" Background="{DynamicResource Panel}"
+                BorderThickness="0,1,0,0" BorderBrush="{DynamicResource Divider}" Padding="8">
+          <Grid RowDefinitions="Auto,Auto,*" RowSpacing="5">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="5">
+              <TextBlock Text="PROBLEMS" Classes="section" VerticalAlignment="Center" />
+              <Button Grid.Column="1" x:Name="CheckCSharpProjectButton" Content="Check C# Project…" Click="OnCheckCSharpProject" />
+              <Button Grid.Column="2" x:Name="StopProjectCheckButton" Content="Stop" IsVisible="False" Click="OnStopProjectCheck" />
+              <Button Grid.Column="3" Content="×" Classes="quiet" ToolTip.Tip="Hide problems" AutomationProperties.Name="Hide problems" Click="OnProblems" />
+            </Grid>
+            <TextBlock Grid.Row="1" x:Name="ProblemsSummary" Classes="muted" TextTrimming="CharacterEllipsis" />
+            <ListBox Grid.Row="2" x:Name="ProblemList" Tapped="OnProblemTapped" KeyDown="OnProblemKeyDown" AutomationProperties.Name="Problems list">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="local:ProblemRow">
+                  <Grid ColumnDefinitions="74,*" ColumnSpacing="8" ToolTip.Tip="{Binding Detail}">
+                    <TextBlock Text="{Binding Code}" Classes="problem" Classes.error="{Binding IsError}" VerticalAlignment="Top" />
+                    <StackPanel Grid.Column="1" Spacing="2">
+                      <TextBlock Text="{Binding Message}" TextTrimming="CharacterEllipsis" />
+                      <TextBlock Text="{Binding Location}" Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </Border>
       </Grid>
 
       <GridSplitter x:Name="AgentSplitter" Grid.Column="3" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
@@ -453,11 +490,31 @@
       </Grid>
     </Border>
 
-    <Border Grid.Row="3" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Divider}" BorderThickness="0,1,0,0">
-      <Grid ColumnDefinitions="Auto,*,Auto" Margin="12,0" ColumnSpacing="12">
-        <TextBlock x:Name="BranchLabel" Text="Local" Foreground="{DynamicResource AccentInk}" VerticalAlignment="Center" />
-        <TextBlock Grid.Column="1" x:Name="StatusText" Text="Ready" Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
-        <TextBlock Grid.Column="2" x:Name="EditorStatus" Classes="muted" VerticalAlignment="Center" />
+    <Border Grid.Row="3" UseLayoutRounding="False" Background="{DynamicResource Panel}"
+            BorderBrush="{DynamicResource Divider}" BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="Auto,*,Auto" Margin="7,0" ColumnSpacing="8">
+        <StackPanel Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">
+          <Button x:Name="StatusBranchButton" Classes="quiet statusAction" Click="OnGitBranches" IsEnabled="False"
+                  ToolTip.Tip="Switch Git branch" AutomationProperties.Name="Switch Git branch">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <Image Width="12" Height="12" Source="/Assets/Material/git.png" VerticalAlignment="Center" />
+              <TextBlock x:Name="BranchLabel" Text="Local" MaxWidth="155" TextTrimming="CharacterEllipsis"
+                         Foreground="{DynamicResource AccentInk}" VerticalAlignment="Center" />
+              <TextBlock Text="▾" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button x:Name="StatusFetchButton" Classes="quiet statusAction" Content="Fetch" Click="OnGitFetch" IsEnabled="False"
+                  ToolTip.Tip="Fetch Git remote refs" AutomationProperties.Name="Fetch Git remote refs" />
+          <Button x:Name="StatusProblemsButton" Classes="quiet statusAction" Content="Problems" Click="OnProblems"
+                  ToolTip.Tip="Show problems" AutomationProperties.Name="Show problems" IsVisible="False" />
+        </StackPanel>
+        <TextBlock Grid.Column="1" x:Name="StatusText" Text="Ready" Classes="muted" FontSize="12"
+                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Button x:Name="LanguageButton" Content="Plain Text" Classes="quiet statusAction" IsVisible="False" Click="OnChooseLanguage"
+                  ToolTip.Tip="Change file language" AutomationProperties.Name="Change file language" />
+          <TextBlock x:Name="EditorStatus" Classes="muted" FontSize="12" VerticalAlignment="Center" />
+        </StackPanel>
       </Grid>
     </Border>
   </Grid>

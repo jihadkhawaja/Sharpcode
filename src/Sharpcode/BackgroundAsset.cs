@@ -25,6 +25,12 @@ internal sealed class BackgroundAsset(string name, string id, Bitmap bitmap, byt
         }, token).ConfigureAwait(false);
     }
 
+    internal static async Task<Bitmap> ReadImageAsync(Stream source, CancellationToken token)
+    {
+        var bytes = await ReadImageBytesAsync(source, token).ConfigureAwait(false);
+        return await Task.Run(() => Decode(bytes), token).ConfigureAwait(false);
+    }
+
     public static async Task<BackgroundAsset?> OpenSavedAsync(AppearanceSettings settings, CancellationToken token)
     {
         if (settings.BackgroundId is not { Length: 64 } id || !id.All(Uri.IsHexDigit))

@@ -119,6 +119,7 @@ public partial class MainWindow
                 return;
             searchCancellation?.Cancel();
             workspace = next;
+            ResetProjectCheck();
             ShowGitStatus(null, null, "Reading Git status…");
             GitFilter.Text = "";
             GitCommitMessage.Text = "";
@@ -332,7 +333,10 @@ public partial class MainWindow
     {
         OutputPane.IsVisible = !OutputPane.IsVisible;
         if (OutputPane.IsVisible)
+        {
+            ProblemsPane.IsVisible = false;
             CommandInput.Focus();
+        }
     }
 
     private Task RunTypedCommandAsync()
@@ -366,6 +370,7 @@ public partial class MainWindow
         if (commandCancellation is not null)
             return;
         OutputPane.IsVisible = true;
+        ProblemsPane.IsVisible = false;
         OutputText.Text = $"$ {display}\n";
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         using var process = new Process { StartInfo = start };

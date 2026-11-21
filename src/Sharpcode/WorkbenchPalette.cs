@@ -48,6 +48,7 @@ internal static class WorkbenchPalette
         app.Resources["CurrentLineBorder"] = new Pen(new SolidColorBrush(Color.FromArgb(65, accentInk.R, accentInk.G, accentInk.B)));
         SetHex("Lavender", values.Lavender);
         SetHex("Danger", values.Danger);
+        SetHex("Warning", light ? "#845610" : "#F4BD6A");
         SetHex("DiffAdded", values.Added);
         app.SetFluentAccent(accentInk);
     }

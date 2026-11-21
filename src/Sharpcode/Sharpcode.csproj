@@ -13,6 +13,7 @@
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
     <PackageReference Include="AvaloniaEdit.TextMate" Version="12.0.0" />
     <PackageReference Include="DiffPlex" Version="1.7.2" />
+    <PackageReference Include="Markdig" Version="1.6.0" />
     <ProjectReference Include="../Sharpcode.Core/Sharpcode.Core.csproj" />
   </ItemGroup>
   <ItemGroup>
@@ -22,6 +23,7 @@
           CopyToPublishDirectory="PreserveNewest" />
     <None Update="Assets/Material/NOTICE.md" TargetPath="licenses/MaterialIconTheme-Notice.md"
           CopyToPublishDirectory="PreserveNewest" />
+    <None Update="Assets/Licenses/*.txt" TargetPath="licenses/%(Filename)%(Extension)" CopyToPublishDirectory="PreserveNewest" />
     <InternalsVisibleTo Include="Sharpcode.Tests" />
     <None Include="../../LICENSE" Link="LICENSE" CopyToPublishDirectory="PreserveNewest" />
     <None Include="../../external/AgentSpace/LICENSE" Link="licenses/AgentSpace.txt"

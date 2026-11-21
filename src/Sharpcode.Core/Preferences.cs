@@ -6,7 +6,7 @@ using AgentSpace;
 namespace Sharpcode.Core;
 
 public sealed record Preferences(ModelSettings Model, string? LastWorkspace = null, double FontSize = 14,
-    string[]? RecentWorkspaces = null, bool ShowSidebar = true, bool ShowAgent = true, AppearanceSettings? Appearance = null)
+    string[]? RecentWorkspaces = null, bool ShowSidebar = true, bool ShowAgent = false, AppearanceSettings? Appearance = null)
 {
     public static string DataDirectory =>
         Environment.GetEnvironmentVariable("SHARPCODE_DATA_DIR") is { Length: > 0 } overrideDirectory

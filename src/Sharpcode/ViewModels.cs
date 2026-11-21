@@ -35,6 +35,8 @@ public sealed class EditorTab : INotifyPropertyChanged
     public int Caret { get; set; }
     public double VerticalOffset { get; set; }
     public bool IsSaving { get; set; }
+    internal string? LanguageOverride { get; set; }
+    internal bool ShowMarkdownPreview { get; set; }
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public void Saved(string path, byte[] version, bool isCurrentVersion)
