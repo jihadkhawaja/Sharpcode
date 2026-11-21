@@ -1,0 +1,41 @@
+# .NET build output, packages, and Sharpcode release archives
+[Bb]in/
+[Oo]bj/
+/artifacts/
+*.binlog
+*.nupkg
+*.snupkg
+
+# Test results and coverage
+[Tt]est[Rr]esults/
+[Cc]overage/
+*.trx
+*.coverage
+*.coveragexml
+coverage.*.xml
+coverage.json
+lcov.info
+
+# Local IDE settings and caches
+.vs/
+.idea/
+*.user
+*.suo
+*.rsuser
+*.userosscache
+*.sln.docstates
+
+# Local environment values and signing keys
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pfx
+*.p12
+
+# Python packaging cache and OS metadata
+__pycache__/
+*.pyc
+.DS_Store
+Desktop.ini
+Thumbs.db

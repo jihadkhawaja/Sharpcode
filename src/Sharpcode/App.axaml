@@ -1,0 +1,118 @@
+<Application xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:editing="using:AvaloniaEdit.Editing" xmlns:rendering="using:AvaloniaEdit.Rendering"
+             x:Class="Sharpcode.App" RequestedThemeVariant="Dark">
+  <Application.Resources>
+    <FontFamily x:Key="Mono">Cascadia Code, Menlo, DejaVu Sans Mono, monospace</FontFamily>
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme>
+      <FluentTheme.Palettes>
+        <ColorPaletteResources x:Key="Light" Accent="#14785C" />
+        <ColorPaletteResources x:Key="Dark" Accent="#A8F5CB" />
+      </FluentTheme.Palettes>
+    </FluentTheme>
+    <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
+    <Style Selector="Window">
+      <Setter Property="Background" Value="{DynamicResource Canvas}" />
+      <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+      <Setter Property="FontFamily" Value="avares://Avalonia.Fonts.Inter/Assets#Inter" />
+      <Setter Property="FontSize" Value="13" />
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="LetterSpacing" Value="1.1" />
+      <Setter Property="Foreground" Value="{DynamicResource Muted}" />
+    </Style>
+    <Style Selector="TextBlock.muted">
+      <Setter Property="Foreground" Value="{DynamicResource Muted}" />
+    </Style>
+    <Style Selector="SelectableTextBlock.muted">
+      <Setter Property="Foreground" Value="{DynamicResource Muted}" />
+    </Style>
+    <Style Selector="SelectableTextBlock.error">
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
+    <Style Selector="Button.quiet">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{DynamicResource Muted}" />
+    </Style>
+    <Style Selector="Button.quiet:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Quiet}" />
+    </Style>
+    <Style Selector="Button.nav">
+      <Setter Property="Padding" Value="8,6" />
+      <Setter Property="CornerRadius" Value="6" />
+    </Style>
+    <Style Selector="Button.nav.active">
+      <Setter Property="Background" Value="{DynamicResource AccentSurface}" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentInk}" />
+    </Style>
+    <Style Selector="Button.nav.active:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource NavHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource AccentInk}" />
+    </Style>
+    <Style Selector="Button.launch">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="Padding" Value="11,8" />
+      <Setter Property="CornerRadius" Value="7" />
+    </Style>
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="{DynamicResource Accent}" />
+      <Setter Property="Foreground" Value="{DynamicResource OnAccent}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.primary:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AccentHover}" />
+      <Setter Property="Foreground" Value="{DynamicResource OnAccentHover}" />
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="Background" Value="{DynamicResource Canvas}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Divider}" />
+      <Setter Property="PlaceholderForeground" Value="{DynamicResource Muted}" />
+    </Style>
+    <Style Selector="Border.shortcut">
+      <Setter Property="Background" Value="{DynamicResource Raised}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource Divider}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.shortcut TextBlock">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource Muted}" />
+    </Style>
+    <Style Selector="ListBox">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="ListBox#Tabs ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource TabSelection}" />
+      <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+    </Style>
+    <Style Selector="ListBox.picker ListBoxItem">
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Margin" Value="0,2" />
+    </Style>
+    <Style Selector="ListBox.picker ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource AccentSurface}" />
+      <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+    </Style>
+    <Style Selector="GridSplitter">
+      <Setter Property="Background" Value="{DynamicResource Divider}" />
+    </Style>
+    <Style Selector="editing|TextArea">
+      <Setter Property="SelectionBrush" Value="{DynamicResource EditorSelection}" />
+      <Setter Property="SelectionForeground" Value="{DynamicResource Ink}" />
+    </Style>
+    <Style Selector="rendering|TextView">
+      <Setter Property="CurrentLineBackground" Value="{DynamicResource CurrentLine}" />
+      <Setter Property="CurrentLineBorder" Value="{DynamicResource CurrentLineBorder}" />
+    </Style>
+  </Application.Styles>
+</Application>

@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../external/AgentSpace/src/AgentSpace.Infrastructure/AgentSpace.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

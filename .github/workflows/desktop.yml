@@ -1,0 +1,45 @@
+name: Desktop
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: macos-latest
+            rid: osx-arm64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: dotnet build Sharpcode.slnx --configuration Release
+      - run: dotnet test Sharpcode.slnx --configuration Release --no-build
+      - run: dotnet publish src/Sharpcode --configuration Release --runtime ${{ matrix.rid }} --self-contained true --output artifacts/publish/Sharpcode
+      - name: Archive desktop build
+        run: python packaging/archive.py ${{ matrix.rid }} artifacts/publish/Sharpcode artifacts
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Sharpcode-${{ matrix.rid }}
+          path: artifacts/Sharpcode-${{ matrix.rid }}.*
+          if-no-files-found: error

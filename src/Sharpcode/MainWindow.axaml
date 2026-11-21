@@ -1,0 +1,418 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:editor="using:AvaloniaEdit" xmlns:local="using:Sharpcode" xmlns:core="using:Sharpcode.Core"
+        x:Class="Sharpcode.MainWindow" Title="Sharpcode" Width="1480" Height="900"
+        MinWidth="900" MinHeight="580" WindowStartupLocation="CenterScreen" Icon="/Assets/Sharpcode.png">
+  <Grid RowDefinitions="56,32,*,28">
+    <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+      <Grid ColumnDefinitions="Auto,*,Auto" Margin="16,0" ColumnSpacing="16">
+        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+          <Image Width="32" Height="32" Source="/Assets/Sharpcode.png" VerticalAlignment="Center" />
+          <TextBlock Text="Sharpcode" FontWeight="SemiBold" FontSize="17" VerticalAlignment="Center" />
+          <Border Width="1" Height="22" Background="{DynamicResource Divider}" />
+          <Button x:Name="WorkspaceButton" Classes="quiet" Click="OnWorkspaceMenu" Content="Open folder…"
+                  ToolTip.Tip="Open or switch workspace folders" MaxWidth="185"
+                  AutomationProperties.Name="Open or switch workspace folder" />
+        </StackPanel>
+        <Button Grid.Column="1" Click="OnQuickOpen" HorizontalAlignment="Stretch" MaxWidth="460"
+                HorizontalContentAlignment="Stretch" Background="{DynamicResource Canvas}" BorderBrush="{DynamicResource Divider}"
+                Padding="10,4" CornerRadius="7" AutomationProperties.Name="Quick Open">
+          <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="9">
+            <PathIcon Width="13" Height="13" Foreground="{DynamicResource Muted}"
+                      Data="F0 M9,1 A8,8 0 1 1 9,17 A8,8 0 1 1 9,1 Z M9,3 A6,6 0 1 0 9,15 A6,6 0 1 0 9,3 Z M15,14 L22,21 L21,22 L14,15 Z" />
+            <TextBlock Grid.Column="1" Text="Find files or run commands" Classes="muted"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <Border Grid.Column="2" Classes="shortcut"><TextBlock x:Name="QuickShortcut" /></Border>
+          </Grid>
+        </Button>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Button x:Name="SidebarToggle" Classes="quiet nav" Click="OnToggleSidebar" ToolTip.Tip="Toggle sidebar"
+                  AutomationProperties.Name="Toggle sidebar">
+            <PathIcon Width="15" Height="15" Data="M2,3 H22 V21 H2 Z M4,5 V19 H8 V5 Z M10,5 V19 H20 V5 Z" />
+          </Button>
+          <Button x:Name="AgentToggle" Classes="quiet nav" Content="Agent" Click="OnToggleAgent" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="1" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+      <Menu Padding="10,0" VerticalAlignment="Center">
+        <MenuItem Header="_File">
+          <MenuItem Header="New File" Click="OnNewFile" />
+          <MenuItem Header="Open File…" Click="OnOpenFile" />
+          <MenuItem Header="Open Folder…" Click="OnOpenFolder" />
+          <MenuItem Header="Open Recent…" Click="OnOpenRecent" />
+          <MenuItem Header="Clone Repository…" Click="OnGitClone" />
+          <Separator />
+          <MenuItem x:Name="SaveMenuItem" Header="Save" Click="OnSave" />
+          <MenuItem Header="Save As…" Click="OnSaveAs" />
+          <MenuItem Header="Save All" Click="OnSaveAll" />
+          <MenuItem Header="Close Editor" Click="OnCloseTab" />
+        </MenuItem>
+        <MenuItem Header="_Edit">
+          <MenuItem Header="Undo" Click="OnUndo" />
+          <MenuItem Header="Redo" Click="OnRedo" />
+          <MenuItem Header="Find in File" Click="OnFind" />
+          <MenuItem Header="Toggle Line Comment" Click="OnToggleComment" />
+          <MenuItem Header="Go to Line…" Click="OnGoToLine" />
+        </MenuItem>
+        <MenuItem Header="_View">
+          <MenuItem Header="Explorer" Click="OnExplorer" />
+          <MenuItem Header="Search Workspace" Click="OnSearch" />
+          <MenuItem Header="Source Control" Click="OnGit" />
+          <MenuItem Header="Command Palette" Click="OnCommandPalette" />
+          <MenuItem Header="Local Commands" Click="OnToggleOutput" />
+          <Separator />
+          <MenuItem x:Name="AppearanceMenuItem" Header="Appearance…" Click="OnAppearance" />
+          <MenuItem Header="Zoom In" Click="OnZoomIn" />
+          <MenuItem Header="Zoom Out" Click="OnZoomOut" />
+        </MenuItem>
+        <MenuItem Header="_Agent">
+          <MenuItem Header="Provider Settings…" Click="OnProviderSettings" />
+          <MenuItem Header="Suggest Code at Cursor" Click="OnSuggest" />
+          <MenuItem Header="Clear Conversation" Click="OnClearChat" />
+        </MenuItem>
+      </Menu>
+    </Border>
+
+    <Grid Grid.Row="2" x:Name="Workbench" ColumnDefinitions="228,4,*,4,340">
+      <Grid x:Name="Sidebar" Background="{DynamicResource Panel}" RowDefinitions="44,*">
+        <Border BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1" Padding="7,0">
+          <StackPanel Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">
+            <Button x:Name="ExplorerButton" Classes="quiet nav active" Content="Files" Click="OnExplorer" />
+            <Button x:Name="SearchButton" Classes="quiet nav" Content="Search" Click="OnSearch" />
+            <Button x:Name="GitButton" Classes="quiet nav" Content="Git" Click="OnGit" />
+          </StackPanel>
+        </Border>
+        <Grid Grid.Row="1" x:Name="ExplorerPane" RowDefinitions="Auto,*">
+          <Grid ColumnDefinitions="*,Auto" Margin="13,9,7,9">
+            <TextBlock x:Name="ExplorerTitle" Text="WORKSPACE" Classes="section" VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
+            <Button Grid.Column="1" Classes="quiet" Content="↻" Click="OnRefreshExplorer" ToolTip.Tip="Refresh files"
+                    AutomationProperties.Name="Refresh files" />
+          </Grid>
+          <StackPanel x:Name="ExplorerEmpty" Grid.Row="1" Margin="13,5" Spacing="10">
+            <TextBlock Text="Open a folder to browse its files." TextWrapping="Wrap" Classes="muted" />
+            <Button Content="Open Folder…" Click="OnOpenFolder" />
+          </StackPanel>
+          <TreeView x:Name="FileTree" Grid.Row="1" IsVisible="False" Margin="3,0,3,8" Tapped="OnTreeOpen" KeyDown="OnTreeKeyDown"
+                    AutomationProperties.Name="Workspace files" />
+        </Grid>
+        <Grid Grid.Row="1" x:Name="SearchPane" IsVisible="False" RowDefinitions="Auto,Auto,*">
+          <Grid Margin="12,12,12,6" ColumnDefinitions="*,Auto" ColumnSpacing="4">
+            <TextBox x:Name="SearchInput" PlaceholderText="Search workspace" TextChanged="OnSearchChanged"
+                     KeyDown="OnSearchInputKeyDown" />
+            <Button Grid.Column="1" x:Name="ClearSearchButton" Classes="quiet" IsVisible="False" Content="×"
+                    Click="OnClearSearch" ToolTip.Tip="Clear search" AutomationProperties.Name="Clear search" />
+          </Grid>
+          <TextBlock x:Name="SearchSummary" Grid.Row="1" Margin="12,3,12,8" Classes="muted" TextWrapping="Wrap" />
+          <ListBox x:Name="SearchResults" Grid.Row="2" DoubleTapped="OnSearchOpen" KeyDown="OnSearchResultsKeyDown">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="core:SearchHit">
+                <StackPanel Spacing="3" ToolTip.Tip="{Binding Path}">
+                  <TextBlock Text="{Binding Location}" TextTrimming="CharacterEllipsis" FontSize="12" />
+                  <TextBlock Text="{Binding Text}" TextTrimming="CharacterEllipsis" Classes="muted"
+                             FontFamily="{StaticResource Mono}" FontSize="11" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+        <Grid Grid.Row="1" x:Name="GitPane" IsVisible="False" RowDefinitions="Auto,Auto,*">
+          <Grid ColumnDefinitions="*,Auto,Auto" Margin="13,9,7,4">
+            <TextBlock Text="SOURCE CONTROL" Classes="section" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            <Button Grid.Column="1" x:Name="GitStopButton" Classes="quiet" IsVisible="False" Content="Stop" Click="OnGitStop" />
+            <Button Grid.Column="2" Classes="quiet" Content="↻" Click="OnRefreshGit" AutomationProperties.Name="Refresh Git" />
+          </Grid>
+          <TextBlock x:Name="GitSummary" Grid.Row="1" Margin="12,3,12,8" Classes="muted" TextWrapping="Wrap" />
+          <Button x:Name="GitInitButton" Grid.Row="2" Margin="12,4" VerticalAlignment="Top" Classes="primary"
+                  Content="Initialize Repository" IsVisible="False" Click="OnGitInit" />
+          <Grid x:Name="GitDetails" Grid.Row="2" IsVisible="False" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*">
+            <Grid ColumnDefinitions="*,Auto" Margin="9,0,9,7" ColumnSpacing="5">
+              <Button x:Name="GitBranchButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                      Click="OnGitBranches" ToolTip.Tip="Switch branch" />
+              <Button Grid.Column="1" Content="⋯" AutomationProperties.Name="Git actions">
+                <Button.Flyout>
+                  <MenuFlyout>
+                    <MenuItem Header="Create Branch…" Click="OnGitCreateBranch" />
+                    <MenuItem Header="Add Remote…" Click="OnGitAddRemote" />
+                    <Separator />
+                    <MenuItem Header="Fetch…" Click="OnGitFetch" />
+                    <MenuItem Header="Pull" Click="OnGitPull" />
+                    <MenuItem Header="Push" Click="OnGitPush" />
+                    <Separator />
+                    <MenuItem Header="Recent Commits…" Click="OnGitHistory" />
+                  </MenuFlyout>
+                </Button.Flyout>
+              </Button>
+            </Grid>
+            <TextBox Grid.Row="1" x:Name="GitCommitMessage" Margin="9,0,9,6" PlaceholderText="Commit message"
+                     TextWrapping="Wrap" AcceptsReturn="True" MaxHeight="82" TextChanged="OnGitCommitTextChanged" />
+            <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="6" Margin="9,0,9,8">
+              <Button x:Name="GitCommitButton" Content="Commit" Classes="primary" HorizontalAlignment="Stretch"
+                      Click="OnGitCommit" IsEnabled="False" />
+              <Button x:Name="GitPushButton" Grid.Column="1" Content="Push" HorizontalAlignment="Stretch"
+                      Click="OnGitPush" IsEnabled="False" />
+            </Grid>
+            <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="9,0,9,0">
+              <TextBlock x:Name="GitStagedTitle" Text="STAGED" Classes="section" VerticalAlignment="Center" />
+              <Button x:Name="GitUnstageAllButton" Grid.Column="1" Classes="quiet" Content="Unstage All" Click="OnGitUnstageAll" />
+            </Grid>
+            <ListBox x:Name="GitStaged" Grid.Row="4" MaxHeight="142" Tapped="OnGitStagedDiff"
+                     KeyDown="OnGitStagedKeyDown" AutomationProperties.Name="Staged changes">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="core:GitChange">
+                  <Grid ColumnDefinitions="17,*,Auto" ColumnSpacing="4" ToolTip.Tip="{Binding Path}">
+                    <TextBlock Text="{Binding Index}" Foreground="{DynamicResource AccentInk}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Classes="quiet" Content="−" Click="OnGitUnstageFile"
+                            AutomationProperties.Name="Unstage file" ToolTip.Tip="Unstage file" Padding="6,1" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <Grid Grid.Row="5" RowDefinitions="Auto,*">
+              <Grid ColumnDefinitions="*,Auto" Margin="9,3,9,0">
+                <TextBlock x:Name="GitWorkingTitle" Text="CHANGES" Classes="section" VerticalAlignment="Center" />
+                <Button x:Name="GitStageAllButton" Grid.Column="1" Classes="quiet" Content="Stage All" Click="OnGitStageAll" />
+              </Grid>
+              <ListBox x:Name="GitWorking" Grid.Row="1" Tapped="OnGitWorkingDiff"
+                       KeyDown="OnGitWorkingKeyDown" AutomationProperties.Name="Working tree changes">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="core:GitChange">
+                    <Grid ColumnDefinitions="17,*,Auto" ColumnSpacing="4" ToolTip.Tip="{Binding Path}">
+                      <TextBlock Text="{Binding Worktree}" Foreground="{DynamicResource Lavender}" VerticalAlignment="Center" />
+                      <TextBlock Grid.Column="1" Text="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                      <Button Grid.Column="2" Classes="quiet" Content="+" Click="OnGitStageFile"
+                              AutomationProperties.Name="Stage file" ToolTip.Tip="Stage file" Padding="6,1" />
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Grid>
+          </Grid>
+        </Grid>
+      </Grid>
+      <GridSplitter x:Name="SidebarSplitter" Grid.Column="1" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+
+      <Grid Grid.Column="2" RowDefinitions="*,Auto">
+        <Image x:Name="WorkspaceBackground" IsVisible="False" IsHitTestVisible="False" ClipToBounds="True"
+               Stretch="UniformToFill" />
+        <Grid x:Name="EditorPane" IsVisible="False" RowDefinitions="44,31,*,Auto">
+          <Grid ColumnDefinitions="*,42" Background="{DynamicResource Panel}">
+            <ListBox x:Name="Tabs" SelectionChanged="OnTabChanged" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                     ScrollViewer.VerticalScrollBarVisibility="Disabled" AutomationProperties.Name="Open editors">
+              <ListBox.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+              </ListBox.ItemsPanel>
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="local:EditorTab">
+                  <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="7" MinWidth="91" MaxWidth="215">
+                    <TextBlock Text="{Binding FileType}" Foreground="{DynamicResource Lavender}" FontSize="10"
+                               VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1" Text="{Binding Label}" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center" />
+                    <Button Grid.Column="2" Classes="quiet" Content="×" Padding="5,0" Click="OnCloseSpecificTab"
+                            ToolTip.Tip="Close editor" AutomationProperties.Name="Close editor" />
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <Button Grid.Column="1" Classes="quiet" Content="+" Click="OnNewFile" FontSize="19"
+                    HorizontalAlignment="Center" AutomationProperties.Name="New file" />
+          </Grid>
+          <Border Grid.Row="1" BorderBrush="{DynamicResource Divider}" BorderThickness="0,1,0,1" Padding="14,0">
+            <TextBlock x:Name="Breadcrumb" Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+          </Border>
+          <editor:TextEditor x:Name="Editor" Grid.Row="2" Background="Transparent" Foreground="{DynamicResource Ink}"
+                             FontFamily="{StaticResource Mono}" ShowLineNumbers="True" Margin="0,5,0,0"
+                             LineNumbersForeground="{DynamicResource Quiet}"
+                             HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                             AutomationProperties.Name="Code editor" />
+          <Border x:Name="SuggestionPane" Grid.Row="3" IsVisible="False" Background="{DynamicResource Raised}"
+                  BorderBrush="{DynamicResource Divider}" BorderThickness="0,1,0,0" Padding="12">
+            <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="5">
+              <TextBlock Text="CODE SUGGESTION" Classes="section" VerticalAlignment="Center" />
+              <Button Grid.Column="1" Content="Insert" Classes="primary" Click="OnAcceptSuggestion" />
+              <Button Grid.Column="2" Content="Dismiss" Classes="quiet" Click="OnDismissSuggestion" />
+              <ScrollViewer Grid.Row="1" Grid.ColumnSpan="3" MaxHeight="115">
+                <SelectableTextBlock x:Name="SuggestionText" FontFamily="{StaticResource Mono}" TextWrapping="Wrap" />
+              </ScrollViewer>
+            </Grid>
+          </Border>
+        </Grid>
+
+        <ScrollViewer x:Name="WelcomePane" VerticalContentAlignment="Center">
+          <StackPanel MaxWidth="530" VerticalAlignment="Center" Margin="27" Spacing="18">
+            <StackPanel Spacing="5">
+              <TextBlock x:Name="WelcomeTitle" Text="Get started" FontSize="34" FontWeight="SemiBold"
+                         LetterSpacing="-1.1" TextTrimming="CharacterEllipsis" />
+              <TextBlock x:Name="WelcomeDescription" Text="Open a folder to edit and search a project." Classes="muted"
+                         FontSize="14" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel Spacing="5">
+              <Button x:Name="WelcomeOpenFolder" Classes="primary launch" Click="OnOpenFolder">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                  <TextBlock Text="Open Folder…" VerticalAlignment="Center" />
+                  <Border Grid.Column="1" Classes="shortcut"><TextBlock x:Name="OpenFolderShortcut" /></Border>
+                </Grid>
+              </Button>
+              <Button x:Name="WelcomeBrowse" Classes="primary launch" IsVisible="False" Click="OnQuickOpen">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                  <TextBlock Text="Find a File" VerticalAlignment="Center" />
+                  <Border Grid.Column="1" Classes="shortcut"><TextBlock x:Name="BrowseShortcut" /></Border>
+                </Grid>
+              </Button>
+              <Button Classes="quiet launch" Click="OnOpenFile">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                  <TextBlock Text="Open File…" VerticalAlignment="Center" />
+                  <Border Grid.Column="1" Classes="shortcut"><TextBlock x:Name="OpenFileShortcut" /></Border>
+                </Grid>
+              </Button>
+              <Button Classes="quiet launch" Click="OnNewFile">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                  <TextBlock Text="New File" VerticalAlignment="Center" />
+                  <Border Grid.Column="1" Classes="shortcut"><TextBlock x:Name="NewFileShortcut" /></Border>
+                </Grid>
+              </Button>
+            </StackPanel>
+            <StackPanel x:Name="RecentPane" IsVisible="False" Spacing="6">
+              <TextBlock Text="RECENT WORKSPACES" Classes="section" Margin="8,0" />
+              <ItemsControl x:Name="RecentList">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="local:RecentWorkspace">
+                    <Button Classes="quiet launch" Click="OnRecentWorkspace" ToolTip.Tip="{Binding Path}">
+                      <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                        <PathIcon Width="14" Height="14" Foreground="{DynamicResource AccentInk}"
+                                  Data="M1,3 H9 L12,6 H23 V20 H1 Z M3,5 V18 H21 V8 H11 L8,5 Z" />
+                        <StackPanel Grid.Column="1" Spacing="3">
+                          <TextBlock Text="{Binding Name}" Foreground="{DynamicResource Ink}" FontWeight="Medium"
+                                     TextTrimming="CharacterEllipsis" />
+                          <TextBlock Text="{Binding Path}" Classes="muted" FontSize="11" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                      </Grid>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="1" x:Name="OutputPane" IsVisible="False" Height="220" Background="{DynamicResource Panel}"
+                BorderThickness="0,1,0,0" BorderBrush="{DynamicResource Divider}" Padding="8">
+          <Grid RowDefinitions="Auto,*,Auto" RowSpacing="5">
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+              <TextBlock Text="LOCAL COMMANDS" Classes="section" VerticalAlignment="Center" />
+              <Button Grid.Column="1" x:Name="StopCommand" Content="Stop" IsEnabled="False" Click="OnStopCommand" />
+              <Button Grid.Column="2" Content="×" Classes="quiet" Click="OnToggleOutput" AutomationProperties.Name="Hide output" />
+            </Grid>
+            <TextBox Grid.Row="1" x:Name="OutputText" IsReadOnly="True" FontFamily="{StaticResource Mono}"
+                     AcceptsReturn="True" TextWrapping="Wrap" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+            <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+              <TextBox x:Name="CommandInput" PlaceholderText="Run a command in the workspace" KeyDown="OnCommandKeyDown" />
+              <Button Grid.Column="1" x:Name="RunCommand" Content="Run" Click="OnRunCommand" />
+            </Grid>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <GridSplitter x:Name="AgentSplitter" Grid.Column="3" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" />
+      <Grid Grid.Column="4" x:Name="AgentPane" RowDefinitions="44,*,Auto,Auto" Background="{DynamicResource Panel}">
+        <Border BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1" Padding="12,0">
+          <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="4">
+            <TextBlock Text="Coding agent" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+            <Button Grid.Column="1" x:Name="NewChatButton" Classes="quiet" Content="New chat" Click="OnClearChat" />
+            <Button Grid.Column="2" Classes="quiet" Content="Settings" Click="OnProviderSettings" />
+          </Grid>
+        </Border>
+        <Grid Grid.Row="1">
+          <StackPanel x:Name="ChatWelcome" Margin="18,20" Spacing="9">
+            <TextBlock Text="Ask about your code" FontSize="22" FontWeight="SemiBold" TextWrapping="Wrap" />
+            <TextBlock x:Name="ChatWelcomeDescription" Text="Open a folder to give the agent workspace context."
+                       Classes="muted" TextWrapping="Wrap" />
+            <Button x:Name="ConfigureProvider" Content="Configure a model" Click="OnProviderSettings" Classes="primary" Margin="0,5,0,0" />
+            <StackPanel x:Name="AgentStarters" IsVisible="False" Margin="0,4,0,0" Spacing="4">
+              <Button Classes="quiet launch" Content="Explain this workspace" Click="OnExplainWorkspace" />
+              <Button Classes="quiet launch" Content="Explain the active file" Click="OnExplainFile" x:Name="ExplainFileButton" />
+            </StackPanel>
+          </StackPanel>
+          <ListBox x:Name="Transcript" IsVisible="False" Padding="7,5" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                   AutomationProperties.Name="Agent conversation">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="local:ChatEntry">
+                <Border Background="{DynamicResource Canvas}" BorderBrush="{DynamicResource Divider}" BorderThickness="1"
+                        CornerRadius="8" Padding="11" Margin="0,3">
+                  <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Role}" FontWeight="SemiBold" Foreground="{DynamicResource AccentInk}" />
+                    <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+        <Border Grid.Row="2" x:Name="ReviewPane" IsVisible="False" Background="{DynamicResource Raised}"
+                BorderBrush="{DynamicResource Divider}" BorderThickness="0,1,0,0" Padding="11,8">
+          <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" RowSpacing="5">
+            <TextBlock x:Name="ReviewTitle" Text="DRAFT CHANGES" Classes="section" VerticalAlignment="Center" />
+            <Button Grid.Column="1" x:Name="ReviewButton" Classes="quiet" Content="Review Diff" Click="OnReviewChange" />
+            <ListBox Grid.Row="1" Grid.ColumnSpan="2" x:Name="ReviewFiles" MaxHeight="125" DoubleTapped="OnReviewChange"
+                     KeyDown="OnReviewKeyDown" AutomationProperties.Name="Draft changes">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="core:ProposedChange">
+                  <TextBlock Text="{Binding RelativePath}" TextTrimming="CharacterEllipsis" />
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </Border>
+        <Border Grid.Row="3" BorderBrush="{DynamicResource Divider}" BorderThickness="0,1,0,0" Padding="10">
+          <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="7">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+              <ComboBox x:Name="AgentModePicker" SelectedIndex="0" AutomationProperties.Name="Agent mode"
+                        SelectionChanged="OnAgentModeChanged">
+                <ComboBoxItem Content="Ask" />
+                <ComboBoxItem x:Name="AgentEditMode" Content="Edit files" />
+              </ComboBox>
+              <Button Grid.Column="1" Classes="quiet" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                      Padding="6,4" Click="OnProviderSettings" AutomationProperties.Name="Choose model provider">
+                <TextBlock x:Name="ModelLabel" Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              </Button>
+              <Button Grid.Column="2" x:Name="CancelAgent" IsVisible="False" Content="Stop" Click="OnCancelAgent" />
+            </Grid>
+            <TextBox Grid.Row="1" x:Name="PromptBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72"
+                     MaxHeight="155" TextChanged="OnPromptChanged" KeyDown="OnPromptKeyDown" />
+            <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="4">
+              <CheckBox x:Name="AttachEditor" ToolTip.Tip="Send the selection or text around the cursor">
+                <TextBlock x:Name="AttachmentLabel" Text="Attach editor" TextTrimming="CharacterEllipsis" />
+              </CheckBox>
+              <Button Grid.Column="1" x:Name="SendButton" Classes="primary" Content="Send" Click="OnSend" Padding="14,6"
+                      IsEnabled="False" />
+            </Grid>
+            <SelectableTextBlock Grid.Row="3" x:Name="AgentNotice" IsVisible="False" TextWrapping="Wrap" MaxHeight="82"
+                                 AutomationProperties.LiveSetting="Polite" Classes="muted" />
+          </Grid>
+        </Border>
+      </Grid>
+    </Grid>
+
+    <Border Grid.Row="2" x:Name="ErrorBanner" IsVisible="False"
+            VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="18,0,18,16" MaxWidth="580"
+            Background="{DynamicResource Raised}" BorderBrush="{DynamicResource Danger}" BorderThickness="1"
+            CornerRadius="8" Padding="12,8">
+      <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+        <SelectableTextBlock x:Name="ErrorText" Foreground="{DynamicResource Danger}" TextWrapping="Wrap"
+                             MaxHeight="110" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite" />
+        <Button Grid.Column="1" Classes="quiet" Content="Dismiss" Click="OnDismissError" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="3" Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Divider}" BorderThickness="0,1,0,0">
+      <Grid ColumnDefinitions="Auto,*,Auto" Margin="12,0" ColumnSpacing="12">
+        <TextBlock x:Name="BranchLabel" Text="Local" Foreground="{DynamicResource AccentInk}" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" x:Name="StatusText" Text="Ready" Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+        <TextBlock Grid.Column="2" x:Name="EditorStatus" Classes="muted" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

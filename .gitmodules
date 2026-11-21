@@ -1,0 +1,6 @@
+[submodule "external/BusinessHarness"]
+	path = external/BusinessHarness
+	url = https://github.com/jihadkhawaja/BusinessHarness.git
+[submodule "external/AgentSpace"]
+	path = external/AgentSpace
+	url = https://github.com/jihadkhawaja/AgentSpace.git

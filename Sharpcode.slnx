@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/external/" />
+  <Folder Name="/external/AgentSpace/" />
+  <Folder Name="/external/AgentSpace/src/">
+    <Project Path="external/AgentSpace/src/AgentSpace.Application/AgentSpace.Application.csproj" />
+    <Project Path="external/AgentSpace/src/AgentSpace.Domain/AgentSpace.Domain.csproj" />
+    <Project Path="external/AgentSpace/src/AgentSpace.Infrastructure/AgentSpace.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Sharpcode.Core/Sharpcode.Core.csproj" />
+    <Project Path="src/Sharpcode/Sharpcode.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Sharpcode.Tests/Sharpcode.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,94 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Sharpcode.AppearanceWindow" Title="Appearance" Width="620" Height="600" MinWidth="460" MinHeight="460"
+        ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="Auto,*,Auto" Margin="22,19" RowSpacing="14">
+    <TextBlock Text="Appearance" FontSize="23" FontWeight="SemiBold" />
+    <ScrollViewer Grid.Row="1">
+      <StackPanel Spacing="15" Margin="0,0,8,0">
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+          <StackPanel Spacing="5">
+            <TextBlock Text="Theme" FontWeight="Medium" />
+            <ComboBox x:Name="ThemePicker" HorizontalAlignment="Stretch" AutomationProperties.Name="Theme"
+                      SelectionChanged="OnSettingChanged">
+              <ComboBoxItem Content="Dark" />
+              <ComboBoxItem Content="Light" />
+              <ComboBoxItem Content="Midnight" />
+              <ComboBoxItem Content="Follow system" />
+            </ComboBox>
+          </StackPanel>
+          <StackPanel Grid.Column="1" Spacing="5">
+            <TextBlock Text="Accent color" FontWeight="Medium" />
+            <ComboBox x:Name="AccentPicker" HorizontalAlignment="Stretch" AutomationProperties.Name="Accent color"
+                      SelectionChanged="OnSettingChanged">
+              <ComboBoxItem Content="Theme default" />
+              <ComboBoxItem Content="Mint" />
+              <ComboBoxItem Content="Blue" />
+              <ComboBoxItem Content="Lavender" />
+              <ComboBoxItem Content="Amber" />
+              <ComboBoxItem Content="Custom…" />
+            </ComboBox>
+          </StackPanel>
+        </Grid>
+        <StackPanel x:Name="CustomAccentRow" IsVisible="False" Spacing="5">
+          <TextBlock Text="Custom accent" FontWeight="Medium" />
+          <TextBox x:Name="AccentHex" PlaceholderText="#RRGGBB" MaxLength="16" TextChanged="OnAccentTextChanged"
+                   AutomationProperties.Name="Custom accent hex color" />
+          <TextBlock x:Name="AccentError" IsVisible="False" Text="Enter a six-digit hex color, such as #5CB3FF."
+                     TextWrapping="Wrap" Foreground="{DynamicResource Danger}" />
+        </StackPanel>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+          <TextBlock Text="Editor font size" FontWeight="Medium" VerticalAlignment="Center" />
+          <NumericUpDown x:Name="EditorSize" Grid.Column="1" Minimum="9" Maximum="32" Increment="1" Width="104"
+                         FormatString="0" ValueChanged="OnFontSizeChanged" AutomationProperties.Name="Editor font size" />
+        </Grid>
+        <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Divider}" BorderThickness="1"
+                CornerRadius="8" Padding="12">
+          <StackPanel Spacing="9">
+            <TextBlock Text="Editor background image" FontWeight="SemiBold" />
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+              <TextBlock x:Name="BackgroundName" Text="No image selected" Classes="muted" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis" />
+              <Button Grid.Column="1" x:Name="ChooseImageButton" Content="Choose Image…" Click="OnChooseImage" />
+              <Button Grid.Column="2" x:Name="RemoveImageButton" Content="Remove" Classes="quiet" Click="OnRemoveImage" />
+            </Grid>
+            <Grid x:Name="ImageOptions" ColumnDefinitions="*,Auto" ColumnSpacing="14">
+              <StackPanel Spacing="2">
+                <Grid ColumnDefinitions="*,Auto">
+                  <TextBlock Text="Opacity" VerticalAlignment="Center" />
+                  <TextBlock x:Name="OpacityLabel" Grid.Column="1" Classes="muted" VerticalAlignment="Center" />
+                </Grid>
+                <Slider x:Name="BackgroundOpacity" Minimum="0" Maximum="45" ValueChanged="OnOpacityChanged"
+                        AutomationProperties.Name="Background image opacity" />
+              </StackPanel>
+              <StackPanel Grid.Column="1" Spacing="5">
+                <TextBlock Text="Sizing" />
+                <ComboBox x:Name="ImageSizing" AutomationProperties.Name="Background image sizing"
+                          SelectionChanged="OnSettingChanged">
+                  <ComboBoxItem Content="Fill" />
+                  <ComboBoxItem Content="Fit" />
+                </ComboBox>
+              </StackPanel>
+            </Grid>
+            <TextBlock x:Name="ImageStatus" IsVisible="False" Classes="muted" TextWrapping="Wrap" />
+          </StackPanel>
+        </Border>
+        <Border Background="{DynamicResource Canvas}" BorderBrush="{DynamicResource Divider}" BorderThickness="1"
+                CornerRadius="8" ClipToBounds="True">
+          <Grid Height="120">
+            <Image x:Name="PreviewImage" ClipToBounds="True" IsHitTestVisible="False" />
+            <StackPanel Margin="14,10" Spacing="5">
+              <TextBlock Text="Editor preview" Classes="section" />
+              <TextBlock x:Name="PreviewCode" FontFamily="{StaticResource Mono}" Foreground="{DynamicResource Ink}"
+                         TextWrapping="Wrap"><Run Text="public " Foreground="{DynamicResource AccentInk}" /><Run Text="record Notebook(string Title);" /></TextBlock>
+            </StackPanel>
+          </Grid>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+    <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+      <Button Content="Reset to Defaults" Classes="quiet" Click="OnReset" />
+      <Button Grid.Column="1" Content="Cancel" Click="OnCancel" />
+      <Button Grid.Column="2" x:Name="SaveAppearanceButton" Content="Save Appearance" Classes="primary" Click="OnSave" />
+    </Grid>
+  </Grid>
+</Window>

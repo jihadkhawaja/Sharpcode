@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <Product>Sharpcode</Product>
+    <Version>0.1.5</Version>
+    <ApplicationIcon>Assets/Sharpcode.ico</ApplicationIcon>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.6" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
+    <PackageReference Include="AvaloniaEdit.TextMate" Version="12.0.0" />
+    <PackageReference Include="DiffPlex" Version="1.7.2" />
+    <ProjectReference Include="../Sharpcode.Core/Sharpcode.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <AvaloniaResource Include="Assets/Sharpcode.png" />
+    <AvaloniaResource Include="Assets/Material/*.png" />
+    <None Update="Assets/Material/LICENSE.txt" TargetPath="licenses/MaterialIconTheme.txt"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Update="Assets/Material/NOTICE.md" TargetPath="licenses/MaterialIconTheme-Notice.md"
+          CopyToPublishDirectory="PreserveNewest" />
+    <InternalsVisibleTo Include="Sharpcode.Tests" />
+    <None Include="../../LICENSE" Link="LICENSE" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../../external/AgentSpace/LICENSE" Link="licenses/AgentSpace.txt"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

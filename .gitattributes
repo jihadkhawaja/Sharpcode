@@ -1,0 +1,22 @@
+# Store and check out text with LF on every platform.
+* text=auto eol=lf
+
+# Use Git's language-aware diff headers for source files.
+*.cs text diff=csharp
+*.py text diff=python
+
+# Windows batch scripts use CRLF in the working tree.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Keep branding, icon assets, and archives in their original binary formats.
+*.bmp binary
+*.gif binary
+*.icns binary
+*.ico binary
+*.jpeg binary
+*.jpg binary
+*.png binary
+*.webp binary
+*.gz binary
+*.zip binary
