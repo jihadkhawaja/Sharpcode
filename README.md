@@ -41,12 +41,12 @@ Choose a PNG, JPEG, WebP, or BMP up to 24 MB for the editor background. **Fill**
 
 ## Source control
 
-Open the **Git** tab to use your installed Git CLI. You can initialize an open folder or use **File → Clone Repository** with a GitHub HTTPS or SSH URL.
+Open the **Git** tab or press **Ctrl+Shift+G** to use your installed Git CLI. The panel can initialize the open folder or clone from a GitHub HTTPS or SSH URL.
 
-1. Click a staged or working-tree change, or press **Enter**, to view its diff. Stage or unstage a file with **+** or **−**, or use the bulk actions.
-2. Enter a commit message and click **Commit**. Git stages saved file contents and uses your configured Git author and signing settings.
-3. To publish a branch, use **Git actions → Add Remote** with the URL of an existing GitHub repository. Click **Push** to establish tracking on the first push. Later pushes use the configured upstream.
-4. Use the branch button to switch branches and the Git actions menu to create branches, fetch, pull, or view recent commits. Pull uses fast-forward only. Save open changes before switching or pulling.
+1. Filter changes by file name or path. Select a file and press **Enter**, or click the row, to open its diff in the editor area. Use **+** or **−** on a row, the action in the diff header, or **Stage All** and **Unstage All** for the whole repository.
+2. Enter a message and click **Commit**, or press **Ctrl+Enter** (**⌘Return** on macOS) in the message field. Staging uses saved file contents. Commits use your configured Git author and signing settings.
+3. Use **Add Remote** with the URL of an existing GitHub repository. **Publish Branch** establishes tracking. The remote button then offers **Fetch**, **Pull**, or **Push** based on the branch's last known upstream status. Fetch updates the ahead and behind counts.
+4. Use the branch button to switch branches and **Git actions** to create branches, choose remote actions, or view recent commits. Pull uses fast-forward only. Save open changes before switching or pulling.
 
 Remote actions use your Git credential helper or SSH agent. [GitHub authentication for Git](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/about-authentication-to-github)
 

@@ -31,6 +31,7 @@ public partial class MainWindow : Window
         preferences = Preferences.Load();
         InitializeComponent();
         InitializeEditor();
+        DiffWindow.AddDiffHighlighting(GitDiffEditor);
         ApplyAppearance(new(CurrentAppearance, preferences.FontSize, null));
         InitializeAgent();
         QuickShortcut.Text = BrowseShortcut.Text = $"{PrimaryLabel}P";
@@ -42,8 +43,19 @@ public partial class MainWindow : Window
         Workbench.SizeChanged += (_, args) => UpdateDockLayout(args.NewSize.Width);
         AddHandler(KeyDownEvent, OnShortcut, RoutingStrategies.Tunnel);
         Closing += OnWindowClosing;
+        gitRefreshAfterWrite.Tick += async (_, _) =>
+        {
+            gitRefreshAfterWrite.Stop();
+            await TryAsync(RefreshGitAsync);
+        };
+        Activated += async (_, _) =>
+        {
+            if (workspace is not null && GitPane.IsVisible && Sidebar.IsVisible && gitStatusRead is null)
+                await TryAsync(RefreshGitAsync);
+        };
         Closed += (_, _) =>
         {
+            gitRefreshAfterWrite.Stop();
             lifetime.Cancel();
             syntax?.Dispose();
             editorBackground?.Dispose();
@@ -216,6 +228,7 @@ public partial class MainWindow : Window
             Key.N when primary => Immediate(NewFile),
             Key.S when shifted => () => SaveActiveAsync(forcePicker: true),
             Key.S when primary => () => SaveActiveAsync(),
+            Key.W when primary && GitReviewPane.IsVisible => Immediate(DismissGitReview),
             Key.W when primary => () => CloseTabAsync(activeTab),
             Key.Tab when control => Immediate(() => CycleTabs(1)),
             Key.Tab when controlShift => Immediate(() => CycleTabs(-1)),
@@ -228,12 +241,15 @@ public partial class MainWindow : Window
             Key.OemComma when primary => EditAppearanceAsync,
             Key.E when shifted => Immediate(ShowExplorer),
             Key.G when controlShift => RefreshGitPaneAsync,
+            Key.Enter when primary && GitCommitMessage.IsKeyboardFocusWithin => CommitGitAsync,
             Key.I when e.KeyModifiers == (Primary | (OperatingSystem.IsMacOS() ? KeyModifiers.Control : KeyModifiers.Alt)) =>
                 Immediate(FocusAgent),
             Key.Oem3 when control => Immediate(ToggleOutput),
             Key.OemQuestion when primary && inEditor => Immediate(ToggleComment),
             Key.Space when alt && inEditor => SuggestAsync,
             Key.Tab when e.KeyModifiers == KeyModifiers.None && inEditor && suggestion is not null => Immediate(AcceptSuggestion),
+            Key.Escape when GitReviewPane.IsVisible && (GitReviewPane.IsKeyboardFocusWithin || GitPane.IsKeyboardFocusWithin) =>
+                Immediate(DismissGitReview),
             Key.Escape when suggestion is not null => Immediate(DismissSuggestion),
             Key.OemPlus when primary || shifted => Immediate(() => ChangeFontSize(1)),
             Key.OemMinus when primary => Immediate(() => ChangeFontSize(-1)),

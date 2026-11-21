@@ -135,30 +135,126 @@ public sealed class WorkbenchTests
         var token = TestContext.Current.CancellationToken;
         var repo = await GitRepository.InitAsync(project.Path, token);
         await GitRepositoryTests.ConfigureIdentityAsync(project.Path, token);
-        await File.WriteAllTextAsync(Path.Combine(project.Path, "one.cs"), "class Sample { }\n", token);
-        var window = new MainWindow(project.Path);
+        var src = Directory.CreateDirectory(Path.Combine(project.Path, "src"));
+        var path = Path.Combine(src.FullName, "one.cs");
+        const string text = "class Sample { }\n";
+        await File.WriteAllTextAsync(path, text, token);
+        await File.WriteAllTextAsync(Path.Combine(project.Path, "README.md"), "# Sample\n", token);
+        var window = new MainWindow(path);
         window.Show();
         Press(window, Key.G, KeyModifiers.Control | KeyModifiers.Shift);
         var working = window.FindControl<ListBox>("GitWorking")!;
         var staged = window.FindControl<ListBox>("GitStaged")!;
         var details = window.FindControl<Grid>("GitDetails")!;
-        await UntilAsync(() => working.Items.Count == 1 && details.IsEnabled, token);
+        var editor = window.FindControl<TextEditor>("Editor")!;
+        await UntilAsync(() => working.Items.Count == 2 && details.IsEnabled && editor.Text == text, token);
+        Assert.Equal("2", window.FindControl<TextBlock>("GitBadgeCount")!.Text);
+        var filter = window.FindControl<TextBox>("GitFilter")!;
+        filter.Text = "no matches";
+        await UntilAsync(() => working.Items.Count == 0, token);
+        Assert.True(window.FindControl<TextBlock>("GitChangesEmpty")!.IsVisible);
+        filter.Text = "src/";
+        await UntilAsync(() => working.Items.Count == 1 && working.GetVisualDescendants()
+            .OfType<TextBlock>().Any(block => block.Text == "one.cs" && block.Bounds.Width > 0), token);
+        Assert.Contains("1/2", window.FindControl<ToggleButton>("GitWorkingTitle")!.Content?.ToString());
+
+        var primary = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
+        var review = window.FindControl<Border>("GitReviewPane")!;
+        var diff = window.FindControl<TextEditor>("GitDiffEditor")!;
         var file = working.GetVisualDescendants().OfType<TextBlock>().Single(text => text.Text == "one.cs");
         ClickAt(window, file, new Point(5, file.Bounds.Height / 2));
-        await UntilAsync(() => window.OwnedWindows.Count > 0, token);
-        var diff = Assert.Single(window.OwnedWindows);
-        Assert.Contains("+class Sample { }", diff.GetVisualDescendants().OfType<TextEditor>().Single().Text);
-        diff.Close(false);
-        var stageButton = working.GetVisualDescendants().OfType<Button>()
-            .Single(button => button.DataContext is GitChange && Equals(button.Content, "+"));
+        await UntilAsync(() => review.IsVisible && diff.Text.Contains("+class Sample { }", StringComparison.Ordinal), token);
+        Assert.Empty(window.OwnedWindows);
+        Assert.True(diff.IsReadOnly);
+        Press(window, Key.W, primary);
+        Assert.False(review.IsVisible);
+        Assert.True(editor.IsEffectivelyVisible);
+        Assert.Equal(text, editor.Text);
+
+        working.Focus();
+        Press(working, Key.Enter);
+        await UntilAsync(() => review.IsVisible && diff.Text.Contains("+class Sample { }", StringComparison.Ordinal), token);
+        var stageButton = window.FindControl<Button>("GitReviewStageButton")!;
         stageButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await UntilAsync(() => staged.Items.Count == 1 && working.Items.Count == 0 && details.IsEnabled, token);
-        window.FindControl<TextBox>("GitCommitMessage")!.Text = "Add sample";
+        await UntilAsync(() => staged.Items.Count == 1 && working.Items.Count == 0 && details.IsEnabled &&
+            Equals(stageButton.Content, "Unstage file") && diff.Text.Contains("+class Sample { }", StringComparison.Ordinal), token);
+        Assert.StartsWith("Staged", window.FindControl<TextBlock>("GitReviewDetails")!.Text);
+        var message = window.FindControl<TextBox>("GitCommitMessage")!;
         var commit = window.FindControl<Button>("GitCommitButton")!;
+        Assert.False(commit.IsEnabled);
+        message.Text = "Add sample";
         await UntilAsync(() => commit.IsEnabled, token);
-        commit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        await UntilAsync(() => staged.Items.Count == 0 && details.IsEnabled, token);
+        Assert.Equal("Commit (1)", commit.Content);
+        message.Focus();
+        Press(message, Key.Enter, primary);
+        await UntilAsync(() => staged.Items.Count == 0 && details.IsEnabled && !review.IsVisible, token);
+        Assert.Equal("1", window.FindControl<TextBlock>("GitBadgeCount")!.Text);
         Assert.Contains("Add sample", await repo.HistoryAsync(token));
+        Assert.Equal("README.md", Assert.Single((await repo.StatusAsync(token)).Changes).Path);
+
+        window.FindControl<Button>("ExplorerButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Assert.False(window.FindControl<Grid>("GitPane")!.IsVisible);
+        editor.Document.Insert(editor.Document.TextLength, "// Edit from the Explorer pane\n");
+        Press(window, Key.S, primary);
+        await UntilAsync(() => window.FindControl<TextBlock>("GitBadgeCount")!.Text == "2", token);
+        window.Close();
+        await UntilAsync(() => !window.IsVisible, token);
+    }
+
+    [AvaloniaFact]
+    public async Task SourceControlOffersPublishFetchPullAndPushAsTrackingChanges()
+    {
+        using var data = new TestDirectory();
+        using var fixture = new TestDirectory();
+        using var settings = new SettingsOverride(Environment.GetEnvironmentVariable("SHARPCODE_DATA_DIR"));
+        Environment.SetEnvironmentVariable("SHARPCODE_DATA_DIR", data.Path);
+        var token = TestContext.Current.CancellationToken;
+        var path = Directory.CreateDirectory(Path.Combine(fixture.Path, "work")).FullName;
+        var remote = Directory.CreateDirectory(Path.Combine(fixture.Path, "remote.git")).FullName;
+        var clone = Path.Combine(fixture.Path, "clone");
+        await GitRepositoryTests.RunGitAsync(remote, token, "init", "--bare", "--initial-branch=main");
+        var repo = await GitRepository.InitAsync(path, token);
+        await GitRepositoryTests.ConfigureIdentityAsync(path, token);
+        var file = Path.Combine(path, "notes.txt");
+        await File.WriteAllTextAsync(file, "First\n", token);
+        await repo.StageAsync(null, token);
+        await repo.CommitAsync("First commit", token);
+
+        var window = new MainWindow(file);
+        window.Show();
+        Press(window, Key.G, KeyModifiers.Control | KeyModifiers.Shift);
+        var editor = window.FindControl<TextEditor>("Editor")!;
+        var sync = window.FindControl<Button>("GitSyncButton")!;
+        var refresh = window.FindControl<Button>("GitRefreshButton")!;
+        await UntilAsync(() => Equals(sync.Content, "Add Remote…") && editor.Text == "First\n", token);
+        await repo.AddRemoteAsync("origin", remote, token);
+        refresh.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await UntilAsync(() => Equals(sync.Content, "Publish Branch") && sync.IsEffectivelyEnabled, token);
+        sync.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await UntilAsync(() => Equals(sync.Content, "Fetch…") && sync.IsEffectivelyEnabled, token);
+        Assert.Equal("origin/main", (await repo.StatusAsync(token)).Upstream);
+
+        await GitRepository.CloneAsync(remote, clone, token);
+        var peer = Assert.IsType<GitRepository>(await GitRepository.DiscoverAsync(clone, token));
+        await GitRepositoryTests.ConfigureIdentityAsync(clone, token);
+        await File.WriteAllTextAsync(Path.Combine(clone, "notes.txt"), "Second\n", token);
+        await peer.StageAsync(null, token);
+        await peer.CommitAsync("Second commit", token);
+        await peer.PushAsync(await peer.StatusAsync(token), remote: null, token);
+        sync.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await UntilAsync(() => Equals(sync.Content, "Pull ↓1") && sync.IsEffectivelyEnabled, token);
+        sync.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await UntilAsync(() => Equals(sync.Content, "Fetch…") && editor.Text == "Second\n", token);
+
+        await File.WriteAllTextAsync(file, "Third\n", token);
+        await repo.StageAsync(null, token);
+        await repo.CommitAsync("Third commit", token);
+        refresh.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await UntilAsync(() => Equals(sync.Content, "Push ↑1") && sync.IsEffectivelyEnabled, token);
+        sync.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        await UntilAsync(() => Equals(sync.Content, "Fetch…") && sync.IsEffectivelyEnabled, token);
+        await peer.FetchAsync("origin", token);
+        Assert.Equal(1, (await peer.StatusAsync(token)).Behind);
         window.Close();
         await UntilAsync(() => !window.IsVisible, token);
     }
@@ -438,8 +534,8 @@ public sealed class WorkbenchTests
     private static PickerItem? PickerSelection(Window picker) => picker.GetVisualDescendants().OfType<ListBox>()
         .Single(list => list.Name == "PickerResults").SelectedItem as PickerItem;
 
-    private static void Press(Window window, Key key, KeyModifiers modifiers = KeyModifiers.None) =>
-        window.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = key, KeyModifiers = modifiers });
+    private static void Press(InputElement element, Key key, KeyModifiers modifiers = KeyModifiers.None) =>
+        element.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = key, KeyModifiers = modifiers });
 
     private static async Task<WebApplication> StartProviderAsync(CancellationToken cancellationToken)
     {

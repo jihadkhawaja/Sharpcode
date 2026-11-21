@@ -107,6 +107,7 @@ public partial class MainWindow
 
     private void ActivateTab(EditorTab? tab)
     {
+        CloseGitReview();
         if (tab == activeTab)
         {
             if (tab is not null)
@@ -235,8 +236,7 @@ public partial class MainWindow
             Status($"Saved {tab.Title}");
             if (expected.Length == 0)
                 await RefreshExplorerAsync();
-            if (GitPane.IsVisible)
-                await RefreshGitAsync();
+            ScheduleGitRefresh();
             return true;
         }
         finally { tab.IsSaving = false; }

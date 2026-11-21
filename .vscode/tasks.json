@@ -1,0 +1,171 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Publish: Windows (x64)",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "publish",
+                "${workspaceFolder}/src/Sharpcode",
+                "--configuration",
+                "Release",
+                "--runtime",
+                "win-x64",
+                "--self-contained",
+                "true",
+                "--output",
+                "${workspaceFolder}/artifacts/publish/win-x64"
+            ],
+            "problemMatcher": "$msCompile",
+            "group": "build"
+        },
+        {
+            "label": "Publish: Linux (x64)",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "publish",
+                "${workspaceFolder}/src/Sharpcode",
+                "--configuration",
+                "Release",
+                "--runtime",
+                "linux-x64",
+                "--self-contained",
+                "true",
+                "--output",
+                "${workspaceFolder}/artifacts/publish/linux-x64"
+            ],
+            "problemMatcher": "$msCompile",
+            "group": "build"
+        },
+        {
+            "label": "Publish: macOS (Apple Silicon)",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "publish",
+                "${workspaceFolder}/src/Sharpcode",
+                "--configuration",
+                "Release",
+                "--runtime",
+                "osx-arm64",
+                "--self-contained",
+                "true",
+                "--output",
+                "${workspaceFolder}/artifacts/publish/osx-arm64"
+            ],
+            "problemMatcher": "$msCompile",
+            "group": "build"
+        },
+        {
+            "label": "Publish: macOS (Intel)",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "publish",
+                "${workspaceFolder}/src/Sharpcode",
+                "--configuration",
+                "Release",
+                "--runtime",
+                "osx-x64",
+                "--self-contained",
+                "true",
+                "--output",
+                "${workspaceFolder}/artifacts/publish/osx-x64"
+            ],
+            "problemMatcher": "$msCompile",
+            "group": "build"
+        },
+        {
+            "label": "Publish: All Desktop Platforms",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Publish: Windows (x64)",
+                "Publish: Linux (x64)",
+                "Publish: macOS (Apple Silicon)",
+                "Publish: macOS (Intel)"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "Package: Windows (x64)",
+            "type": "process",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/packaging/archive.py",
+                "win-x64",
+                "${workspaceFolder}/artifacts/publish/win-x64",
+                "${workspaceFolder}/artifacts"
+            ],
+            "dependsOrder": "sequence",
+            "dependsOn": "Publish: Windows (x64)",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Package: Linux (x64)",
+            "type": "process",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/packaging/archive.py",
+                "linux-x64",
+                "${workspaceFolder}/artifacts/publish/linux-x64",
+                "${workspaceFolder}/artifacts"
+            ],
+            "dependsOrder": "sequence",
+            "dependsOn": "Publish: Linux (x64)",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Package: macOS (Apple Silicon)",
+            "type": "process",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/packaging/archive.py",
+                "osx-arm64",
+                "${workspaceFolder}/artifacts/publish/osx-arm64",
+                "${workspaceFolder}/artifacts"
+            ],
+            "dependsOrder": "sequence",
+            "dependsOn": "Publish: macOS (Apple Silicon)",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Package: macOS (Intel)",
+            "type": "process",
+            "command": "python",
+            "args": [
+                "${workspaceFolder}/packaging/archive.py",
+                "osx-x64",
+                "${workspaceFolder}/artifacts/publish/osx-x64",
+                "${workspaceFolder}/artifacts"
+            ],
+            "dependsOrder": "sequence",
+            "dependsOn": "Publish: macOS (Intel)",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Package: All Desktop Platforms",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "Package: Windows (x64)",
+                "Package: Linux (x64)",
+                "Package: macOS (Apple Silicon)",
+                "Package: macOS (Intel)"
+            ],
+            "problemMatcher": []
+        }
+    ]
+}

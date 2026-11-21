@@ -311,31 +311,25 @@ internal sealed class PickerWindow : Window
 
 internal static class DiffWindow
 {
-    public static async Task<bool> ShowGitTextAsync(Window owner, string title, string text, bool diff, bool canOpenFile = false)
+    public static Task ShowGitHistoryAsync(Window owner, string text)
     {
+        const string title = "Recent Commits";
         var window = Dialogs.Window(title, 950, 650);
         var grid = new Grid { RowDefinitions = new("Auto,*,Auto"), Margin = new Thickness(17), RowSpacing = 8 };
         grid.Children.Add(Dialogs.Heading(title));
-        var editor = ReviewEditor(text.Length == 0 ? "No textual changes." : text);
-        if (diff)
-            editor.TextArea.TextView.LineTransformers.Add(new DiffLineColors());
-        grid.Children.Add(PickerWindow.InRow(editor, 1));
+        grid.Children.Add(PickerWindow.InRow(ReviewEditor(text), 1));
 
         var actions = Dialogs.Actions();
         var close = Dialogs.Button("Close");
-        close.Click += (_, _) => window.Close(false);
+        close.Click += (_, _) => window.Close();
         actions.Children.Add(close);
-        if (canOpenFile)
-        {
-            var open = Dialogs.Button("Open File", true);
-            open.Click += (_, _) => window.Close(true);
-            actions.Children.Add(open);
-        }
         grid.Children.Add(PickerWindow.InRow(actions, 2));
         window.Content = grid;
-        window.KeyDown += (_, args) => { if (args.Key == Key.Escape) window.Close(false); };
-        return await window.ShowDialog<bool>(owner);
+        window.KeyDown += (_, args) => { if (args.Key == Key.Escape) window.Close(); };
+        return window.ShowDialog(owner);
     }
+
+    public static void AddDiffHighlighting(TextEditor editor) => editor.TextArea.TextView.LineTransformers.Add(new DiffLineColors());
 
     public static async Task<string?> ReviewAsync(Window owner, ProposedChange change, CancellationToken cancellationToken)
     {
@@ -347,7 +341,7 @@ internal static class DiffWindow
         var description = new TextBlock { Text = summary, Classes = { "muted" } };
         grid.Children.Add(PickerWindow.InRow(description, 1));
         var diffEditor = ReviewEditor(diff);
-        diffEditor.TextArea.TextView.LineTransformers.Add(new DiffLineColors());
+        AddDiffHighlighting(diffEditor);
         var tabs = new TabControl
         {
             Items =
@@ -426,17 +420,27 @@ internal static class DiffWindow
 
     private sealed class DiffLineColors : DocumentColorizingTransformer
     {
-        private readonly IBrush inserted = App.Brush("DiffAdded");
-        private readonly IBrush deleted = App.Brush("Danger");
-
         protected override void ColorizeLine(DocumentLine line)
         {
-            if (line.Length < 2)
+            if (line.Length == 0)
                 return;
-            var marker = CurrentContext.Document.GetCharAt(line.Offset);
-            var color = marker switch { '+' => inserted, '-' => deleted, _ => null };
+            var document = CurrentContext.Document;
+            var marker = document.GetCharAt(line.Offset);
+            var color = marker switch
+            {
+                '+' when StartsWith("+++ ") => App.Brush("Muted"),
+                '-' when StartsWith("--- ") => App.Brush("Muted"),
+                'd' when StartsWith("diff --") => App.Brush("Muted"),
+                'i' when StartsWith("index ") => App.Brush("Muted"),
+                '+' => App.Brush("DiffAdded"),
+                '-' => App.Brush("Danger"),
+                '@' => App.Brush("Lavender"),
+                _ => null
+            };
             if (color is not null)
                 ChangeLinePart(line.Offset, line.EndOffset, element => element.TextRunProperties.SetForegroundBrush(color));
+
+            bool StartsWith(string prefix) => line.Length >= prefix.Length && document.GetText(line.Offset, prefix.Length) == prefix;
         }
     }
 }

@@ -95,6 +95,43 @@
       <Setter Property="Background" Value="{DynamicResource TabSelection}" />
       <Setter Property="Foreground" Value="{DynamicResource Ink}" />
     </Style>
+    <Style Selector="ToggleButton.gitGroup">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="3,4" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="ToggleButton.gitGroup:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+    </Style>
+    <Style Selector="ToggleButton.gitGroup:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource Raised}" />
+    </Style>
+    <Style Selector="ListBox.gitChanges">
+      <Setter Property="Margin" Value="4,0" />
+      <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+    </Style>
+    <Style Selector="ListBox.gitChanges ListBoxItem">
+      <Setter Property="Padding" Value="5,4" />
+      <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+      <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="ListBox.gitChanges ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource TabSelection}" />
+      <Setter Property="Foreground" Value="{DynamicResource Ink}" />
+    </Style>
+    <Style Selector="TextBlock.gitStatus">
+      <Setter Property="Foreground" Value="{DynamicResource Lavender}" />
+    </Style>
+    <Style Selector="TextBlock.gitStatus.added">
+      <Setter Property="Foreground" Value="{DynamicResource DiffAdded}" />
+    </Style>
+    <Style Selector="TextBlock.gitStatus.attention">
+      <Setter Property="Foreground" Value="{DynamicResource Danger}" />
+    </Style>
     <Style Selector="ListBox.picker ListBoxItem">
       <Setter Property="CornerRadius" Value="6" />
       <Setter Property="Margin" Value="0,2" />

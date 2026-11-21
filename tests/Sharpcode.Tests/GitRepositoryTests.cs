@@ -125,7 +125,7 @@ public sealed class GitRepositoryTests : IDisposable
         await RunGitAsync(path, token, "config", "core.autocrlf", "false");
     }
 
-    private static async Task RunGitAsync(string path, CancellationToken token, params string[] args)
+    internal static async Task RunGitAsync(string path, CancellationToken token, params string[] args)
     {
         using var process = Process.Start(Workspace.Command("git", path, args))!;
         var errors = process.StandardError.ReadToEndAsync(token);

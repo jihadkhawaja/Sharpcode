@@ -1,18 +1,23 @@
+using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
-using Avalonia.VisualTree;
+using Avalonia.Threading;
 using Sharpcode.Core;
 
 namespace Sharpcode;
 
 public partial class MainWindow
 {
+    private readonly DispatcherTimer gitRefreshAfterWrite = new() { Interval = TimeSpan.FromMilliseconds(350) };
     private GitRepository? gitRepository;
     private GitStatus? gitStatus;
+    private IReadOnlyList<string> gitRemotes = [];
+    private GitChangeRow[] gitStagedRows = [];
+    private GitChangeRow[] gitWorkingRows = [];
+    private Func<Task>? gitSyncAction;
     private CancellationTokenSource? gitOperation;
-    private int gitRevision;
+    private CancellationTokenSource? gitStatusRead;
     private bool gitWorktreeUpdating;
 
     private async Task CloneGitAsync()
@@ -54,92 +59,203 @@ public partial class MainWindow
 
     private Task RefreshGitAsync() => gitOperation is null ? ReadGitStatusAsync() : Task.CompletedTask;
 
+    private void ScheduleGitRefresh()
+    {
+        if (gitRepository is null && !GitPane.IsVisible)
+            return;
+        gitRefreshAfterWrite.Stop();
+        gitRefreshAfterWrite.Start();
+    }
+
     private async Task ReadGitStatusAsync()
     {
-        var revision = ++gitRevision;
+        gitRefreshAfterWrite.Stop();
+        gitStatusRead?.Cancel();
         if (workspace is not { } current)
         {
+            gitStatusRead = null;
             ShowGitStatus(null, null, "Open a folder to use source control.");
             return;
         }
 
-        GitDetails.IsEnabled = false;
-        GitInitButton.IsEnabled = false;
-        GitSummary.Text = "Reading Git status…";
         using var cancel = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        gitStatusRead = cancel;
         cancel.CancelAfter(TimeSpan.FromSeconds(20));
+        GitRefreshButton.IsEnabled = false;
+        if (gitStatus is null)
+        {
+            GitEmptyActions.IsEnabled = false;
+            GitSummary.Text = "Reading Git status…";
+        }
         try
         {
             var repository = await GitRepository.DiscoverAsync(current.Root, cancel.Token);
-            var status = repository is null ? null : await repository.StatusAsync(cancel.Token);
-            if (workspace == current && revision == gitRevision)
-                ShowGitStatus(repository, status, status is null ? "No Git repository in this folder." : "", canInitialize: repository is null);
+            if (repository is null)
+            {
+                if (workspace == current && gitStatusRead == cancel)
+                    ShowGitStatus(null, null, "This folder is outside a Git repository.", canInitialize: true);
+                return;
+            }
+
+            var status = repository.StatusAsync(cancel.Token);
+            var remotes = repository.RemotesAsync(cancel.Token);
+            await Task.WhenAll(status, remotes);
+            if (workspace == current && gitStatusRead == cancel && !cancel.IsCancellationRequested)
+            {
+                ShowGitStatus(repository, await status, "", remotes: await remotes);
+                await RefreshGitReviewAsync();
+            }
         }
         catch (IOException exception)
         {
-            if (workspace == current && revision == gitRevision)
+            if (workspace == current && gitStatusRead == cancel && !cancel.IsCancellationRequested)
                 ShowGitStatus(null, null, exception.Message);
         }
         catch (OperationCanceledException)
         {
-            if (workspace == current && revision == gitRevision && !lifetime.IsCancellationRequested)
+            if (workspace == current && gitStatusRead == cancel && gitOperation is null && !lifetime.IsCancellationRequested)
                 ShowGitStatus(null, null, "Git status timed out. Refresh to try again.");
+        }
+        finally
+        {
+            if (gitStatusRead == cancel)
+            {
+                gitStatusRead = null;
+                GitRefreshButton.IsEnabled = gitOperation is null;
+                GitEmptyActions.IsEnabled = gitOperation is null;
+            }
         }
     }
 
-    private void ShowGitStatus(GitRepository? repository, GitStatus? status, string message, bool canInitialize = false)
+    private void ShowGitStatus(GitRepository? repository, GitStatus? status, string message, bool canInitialize = false,
+        IReadOnlyList<string>? remotes = null)
     {
+        var changesUpdated = !Workspace.PathComparer.Equals(gitRepository?.Root, repository?.Root) ||
+            !ReferenceEquals(gitStatus, status) && (gitStatus is null || status is null || !gitStatus.Changes.SequenceEqual(status.Changes));
         gitRepository = repository;
         gitStatus = status;
+        gitRemotes = remotes ?? [];
         GitDetails.IsVisible = status is not null;
         GitDetails.IsEnabled = gitOperation is null;
+        GitSummary.IsVisible = status is null;
+        GitEmptyActions.IsVisible = status is null;
+        GitEmptyActions.IsEnabled = gitOperation is null;
+        GitRefreshButton.IsEnabled = gitOperation is null && gitStatusRead is null;
         GitInitButton.IsVisible = canInitialize;
-        GitInitButton.IsEnabled = gitOperation is null;
+        GitOpenFolderButton.IsVisible = workspace is null;
+        GitCloneButton.IsVisible = workspace is null || canInitialize;
         BranchLabel.Text = "Local";
         GitSummary.Text = message;
-        if (repository is null || status is null)
-            return;
-
-        var stagedSelection = (GitStaged.SelectedItem as GitChange)?.Path;
-        var workingSelection = (GitWorking.SelectedItem as GitChange)?.Path;
-        var staged = status.Changes.Where(change => change.IsStaged).ToArray();
-        var working = status.Changes.Where(change => change.IsUnstaged).ToArray();
-        GitStaged.ItemsSource = staged;
-        GitWorking.ItemsSource = working;
-        GitStaged.SelectedItem = staged.FirstOrDefault(change => change.Path == stagedSelection);
-        GitWorking.SelectedItem = working.FirstOrDefault(change => change.Path == workingSelection);
-        GitStagedTitle.Text = $"STAGED · {staged.Length:N0}";
-        GitWorkingTitle.Text = $"CHANGES · {working.Length:N0}";
-        GitStageAllButton.IsEnabled = working.Length > 0;
-        GitUnstageAllButton.IsEnabled = staged.Length > 0;
-        GitPushButton.IsEnabled = status.HasCommit && status.Branch is not null;
-        GitBranchButton.Content = status.Branch ?? "Detached HEAD";
-        BranchLabel.Text = (status.Branch ?? "Detached HEAD") +
-            (status.Ahead == 0 ? "" : $"  ↑{status.Ahead}") + (status.Behind == 0 ? "" : $"  ↓{status.Behind}");
-        var summary = status.Changes.Count switch
+        GitBadge.IsVisible = status is { Changes.Count: > 0 };
+        GitBadgeCount.Text = status is { Changes.Count: > 99 } ? "99+" : $"{status?.Changes.Count}";
+        ToolTip.SetTip(GitButton, status is null ? "Source control" : $"{status.Changes.Count:N0} changed files");
+        if (changesUpdated)
         {
-            0 => status.HasCommit ? "Working tree is clean." : "Ready for the first commit.",
-            1 => "1 changed path",
-            _ => $"{status.Changes.Count:N0} changed paths"
-        };
-        if (status.Changes.Any(change => change.IsConflict))
-            summary += " · conflicts";
-        if (status.Upstream is { } upstream)
-            summary += $"\nTracking {upstream}";
-        if (!Workspace.PathComparer.Equals(repository.Root, workspace?.Root))
-            summary = $"Repository · {Path.GetFileName(repository.Root)}\n{summary}";
-        GitSummary.Text = summary;
-        ToolTip.SetTip(GitSummary, repository.Root);
+            gitStagedRows = status?.Changes.Where(change => change.IsStaged).Select(change => new GitChangeRow(change, true)).ToArray() ?? [];
+            gitWorkingRows = status?.Changes.Where(change => change.IsUnstaged).Select(change => new GitChangeRow(change, false)).ToArray() ?? [];
+            ApplyGitFilter();
+        }
+
+        if (repository is null || status is null)
+        {
+            CloseGitReview();
+            return;
+        }
+
+        var branch = status.Branch ?? "Detached HEAD";
+        GitBranchName.Text = branch;
+        ToolTip.SetTip(GitBranchButton, $"Switch branch · {branch}\n{repository.Root}");
+        var divergence = (status.Ahead == 0 ? "" : $"  ↑{status.Ahead}") + (status.Behind == 0 ? "" : $"  ↓{status.Behind}");
+        BranchLabel.Text = branch + divergence;
+        ConfigureGitSync(status, divergence);
         UpdateCommitEnabled();
+        LayoutGitGroups();
     }
+
+    private void ConfigureGitSync(GitStatus status, string divergence)
+    {
+        var hasRemote = gitRemotes.Count > 0;
+        var canUseUpstream = hasRemote || status.Upstream is not null;
+        var canPush = status is { HasCommit: true, Branch: not null };
+        (string Text, string Detail, Func<Task> Action) sync = (status.Upstream, status.Ahead, status.Behind) switch
+        {
+            (null, _, _) when !hasRemote => ("Add Remote…", "No remote configured", AddGitRemoteAsync),
+            (null, _, _) when canPush => ("Publish Branch", "No upstream branch", PushGitAsync),
+            (null, _, _) when status.Branch is null => ("Fetch…", "Detached HEAD", FetchGitAsync),
+            (null, _, _) => ("Fetch…", "Commit to publish this branch", FetchGitAsync),
+            ({ } upstream, > 0, > 0) when hasRemote => ("Fetch…", $"Diverged from {upstream}{divergence}", FetchGitAsync),
+            ({ } upstream, _, > 0) => ($"Pull ↓{status.Behind}", $"Tracking {upstream}{divergence}", PullGitAsync),
+            ({ } upstream, > 0, _) => ($"Push ↑{status.Ahead}", $"Tracking {upstream}{divergence}", PushGitAsync),
+            ({ } upstream, _, _) when hasRemote => ("Fetch…", $"Tracking {upstream}", FetchGitAsync),
+            ({ } upstream, _, _) => ("Add Remote…", $"Tracking {upstream}", AddGitRemoteAsync)
+        };
+        gitSyncAction = sync.Action;
+        GitSyncButton.Content = sync.Text;
+        GitSyncDetails.Text = sync.Detail;
+        ToolTip.SetTip(GitSyncDetails, sync.Detail);
+        ToolTip.SetTip(GitSyncButton, sync.Detail);
+        GitFetchMenu.IsEnabled = hasRemote;
+        GitPullMenu.IsEnabled = canUseUpstream && status.Branch is not null;
+        GitPushMenu.IsEnabled = canUseUpstream && canPush;
+        GitHistoryMenu.IsEnabled = status.HasCommit;
+    }
+
+    private void ApplyGitFilter()
+    {
+        var query = GitFilter.Text?.Trim() ?? "";
+        SetGitRows(GitStaged, gitStagedRows, query);
+        SetGitRows(GitWorking, gitWorkingRows, query);
+        LayoutGitGroups();
+    }
+
+    private static void SetGitRows(ListBox list, GitChangeRow[] rows, string query)
+    {
+        var selection = (list.SelectedItem as GitChangeRow)?.Change.Path;
+        var shown = query.Length == 0 ? rows : rows.Where(row => row.Change.Path.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+            row.Change.OriginalPath?.Contains(query, StringComparison.OrdinalIgnoreCase) == true).ToArray();
+        if (list.ItemsSource is GitChangeRow[] previous && previous.SequenceEqual(shown))
+            return;
+        list.ItemsSource = shown;
+        list.SelectedItem = shown.FirstOrDefault(row => row.Change.Path == selection);
+    }
+
+    private void LayoutGitGroups()
+    {
+        var staged = GitStaged.Items.Count;
+        var working = GitWorking.Items.Count;
+        GitFilter.IsVisible = gitStagedRows.Length + gitWorkingRows.Length > 0;
+        GitStagedGroup.IsVisible = staged > 0;
+        GitWorkingGroup.IsVisible = working > 0;
+        GitStaged.IsVisible = staged > 0 && GitStagedTitle.IsChecked == true;
+        GitWorking.IsVisible = working > 0 && GitWorkingTitle.IsChecked == true;
+        GitDetails.RowDefinitions[4].Height = GitStaged.IsVisible ? new GridLength(1, GridUnitType.Star) : new GridLength(0);
+        GitDetails.RowDefinitions[4].MaxHeight = GitWorking.IsVisible ? Math.Min(175, staged * 34d + 5) : double.PositiveInfinity;
+        GitDetails.RowDefinitions[6].Height = GitWorking.IsVisible ? new GridLength(1.4, GridUnitType.Star) : new GridLength(0);
+        GitStagedTitle.Content = GroupTitle("Staged", staged, gitStagedRows.Length, GitStagedTitle.IsChecked == true);
+        GitWorkingTitle.Content = GroupTitle("Changes", working, gitWorkingRows.Length, GitWorkingTitle.IsChecked == true);
+        GitChangesEmpty.IsVisible = staged + working == 0;
+        GitChangesEmpty.Text = GitFilter.IsVisible ? "No changed files match the filter."
+            : gitStatus is { HasCommit: false } ? "Save a file to start tracking changes." : "Working tree is clean.";
+        ToolTip.SetTip(GitStageAllButton, working == gitWorkingRows.Length ? "Stage all working tree changes" : "Stage all changes, including filtered-out files");
+        ToolTip.SetTip(GitUnstageAllButton, staged == gitStagedRows.Length ? "Unstage all staged files" : "Unstage all files, including filtered-out files");
+    }
+
+    private static string GroupTitle(string label, int shown, int total, bool expanded) =>
+        (expanded ? "▾ " : "▸ ") + label + (shown == total ? $" {total:N0}" : $" {shown:N0}/{total:N0}");
 
     private void UpdateCommitEnabled()
     {
         if (GitCommitButton is null || GitCommitMessage is null)
             return;
-        GitCommitButton.IsEnabled = !string.IsNullOrWhiteSpace(GitCommitMessage.Text) &&
-            gitStatus is { } status && status.Changes.Any(change => change.IsStaged) &&
-            !status.Changes.Any(change => change.IsConflict);
+        var staged = gitStagedRows.Length;
+        var hasMessage = !string.IsNullOrWhiteSpace(GitCommitMessage.Text);
+        var hasConflict = gitWorkingRows.Any(row => row.Change.IsConflict);
+        GitCommitButton.IsEnabled = gitOperation is null && gitStatus is not null && staged > 0 && hasMessage && !hasConflict;
+        GitCommitButton.Content = staged == 0 ? "Commit" : $"Commit ({staged:N0})";
+        GitCommitHint.Text = hasConflict ? "Resolve merge conflicts before committing."
+            : staged == 0 ? "Stage files to include them in a commit."
+            : !hasMessage ? "Enter a commit message." : $"{PrimaryLabel}Enter to commit staged files.";
+        ToolTip.SetTip(GitCommitButton, GitCommitHint.Text);
     }
 
     private async Task RunGitAsync(string progress, string success, Func<CancellationToken, Task> action)
@@ -147,11 +263,15 @@ public partial class MainWindow
         if (gitOperation is not null)
             return;
 
-        ++gitRevision;
+        var reading = gitStatusRead;
+        gitStatusRead = null;
+        reading?.Cancel();
+        gitReviewRead?.Cancel();
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         gitOperation = cancellation;
-        GitDetails.IsEnabled = GitInitButton.IsEnabled = false;
+        GitDetails.IsEnabled = GitEmptyActions.IsEnabled = GitRefreshButton.IsEnabled = GitReviewActions.IsEnabled = false;
         GitStopButton.IsVisible = true;
+        GitSummary.IsVisible = true;
         GitSummary.Text = progress;
         Status(progress);
         try
@@ -187,22 +307,6 @@ public partial class MainWindow
             await repository.CommitAsync(message, token);
             GitCommitMessage.Text = "";
         });
-    }
-
-    private async Task ShowGitDiffAsync(ListBox list, bool staged)
-    {
-        if (gitOperation is not null || gitRepository is not { } repository || list.SelectedItem is not GitChange change)
-            return;
-        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
-        cancel.CancelAfter(TimeSpan.FromSeconds(20));
-        var current = workspace;
-        var diff = await repository.DiffAsync(change, staged, cancel.Token);
-        if (workspace != current || lifetime.IsCancellationRequested)
-            return;
-        var path = Path.GetFullPath(change.Path, repository.Root);
-        var title = $"{(staged ? "Staged" : "Working Tree")} · {change.Path}";
-        if (await DiffWindow.ShowGitTextAsync(this, title, diff, diff: true, canOpenFile: File.Exists(path)))
-            await OpenDocumentAsync(path);
     }
 
     private async Task SwitchGitBranchAsync()
@@ -352,7 +456,7 @@ public partial class MainWindow
     private async Task ShowGitHistoryAsync()
     {
         if (gitRepository is { } repository && gitStatus is { HasCommit: true })
-            await DiffWindow.ShowGitTextAsync(this, "Recent Commits", await repository.HistoryAsync(lifetime.Token), diff: false);
+            await DiffWindow.ShowGitHistoryAsync(this, await repository.HistoryAsync(lifetime.Token));
         else
             Status("This branch has no commits yet.");
     }
@@ -368,31 +472,21 @@ public partial class MainWindow
     private async void OnRefreshGit(object? sender, RoutedEventArgs e) => await TryAsync(RefreshGitAsync);
     private void OnGitStop(object? sender, RoutedEventArgs e) => gitOperation?.Cancel();
     private void OnGitCommitTextChanged(object? sender, TextChangedEventArgs e) => UpdateCommitEnabled();
+    private void OnGitFilterChanged(object? sender, TextChangedEventArgs e) => ApplyGitFilter();
+    private void OnGitGroupToggled(object? sender, RoutedEventArgs e) => LayoutGitGroups();
     private async void OnGitCommit(object? sender, RoutedEventArgs e) => await TryAsync(CommitGitAsync);
     private async void OnGitStageAll(object? sender, RoutedEventArgs e) => await StageGitAsync(null, stage: true);
     private async void OnGitUnstageAll(object? sender, RoutedEventArgs e) => await StageGitAsync(null, stage: false);
-    private async void OnGitStageFile(object? sender, RoutedEventArgs e)
+    private async void OnGitRowAction(object? sender, RoutedEventArgs e)
     {
-        if ((sender as Button)?.DataContext is GitChange change)
-            await StageGitAsync(change, stage: true);
+        if ((sender as Button)?.DataContext is GitChangeRow row)
+            await StageGitAsync(row.Change, stage: !row.Staged);
     }
-    private async void OnGitUnstageFile(object? sender, RoutedEventArgs e)
+    private async void OnGitSync(object? sender, RoutedEventArgs e)
     {
-        if ((sender as Button)?.DataContext is GitChange change)
-            await StageGitAsync(change, stage: false);
+        if (gitSyncAction is { } action)
+            await TryAsync(action);
     }
-    private async void OnGitStagedDiff(object? sender, TappedEventArgs e) => await OpenGitRowDiffAsync(e, GitStaged, staged: true);
-    private async void OnGitWorkingDiff(object? sender, TappedEventArgs e) => await OpenGitRowDiffAsync(e, GitWorking, staged: false);
-    private Task OpenGitRowDiffAsync(TappedEventArgs e, ListBox list, bool staged)
-    {
-        if (e.Source is not Avalonia.Visual source || source.FindAncestorOfType<Button>(includeSelf: true) is not null ||
-            source.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is not GitChange change)
-            return Task.CompletedTask;
-        list.SelectedItem = change;
-        return TryAsync(() => ShowGitDiffAsync(list, staged));
-    }
-    private async void OnGitStagedKeyDown(object? sender, KeyEventArgs e) => await RunOnEnterAsync(e, () => ShowGitDiffAsync(GitStaged, staged: true));
-    private async void OnGitWorkingKeyDown(object? sender, KeyEventArgs e) => await RunOnEnterAsync(e, () => ShowGitDiffAsync(GitWorking, staged: false));
     private async void OnGitBranches(object? sender, RoutedEventArgs e) => await TryAsync(SwitchGitBranchAsync);
     private async void OnGitCreateBranch(object? sender, RoutedEventArgs e) => await TryAsync(CreateGitBranchAsync);
     private async void OnGitAddRemote(object? sender, RoutedEventArgs e) => await TryAsync(AddGitRemoteAsync);

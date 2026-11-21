@@ -19,6 +19,7 @@ public partial class MainWindow
     private CancellationTokenSource? commandCancellation;
     private int explorerRevision;
     private bool switchingWorkspace;
+    private string? pendingWorkspacePath;
 
     private string[] RecentPaths() => (preferences.RecentWorkspaces ?? [])
         .Prepend(preferences.LastWorkspace)
@@ -94,7 +95,12 @@ public partial class MainWindow
     private async Task SetWorkspaceAsync(string path)
     {
         var next = new Workspace(path);
-        if (switchingWorkspace || Workspace.PathComparer.Equals(workspace?.Root, next.Root))
+        if (switchingWorkspace)
+        {
+            pendingWorkspacePath = next.Root;
+            return;
+        }
+        if (Workspace.PathComparer.Equals(workspace?.Root, next.Root))
             return;
         if (gitOperation is not null)
         {
@@ -113,6 +119,8 @@ public partial class MainWindow
                 return;
             searchCancellation?.Cancel();
             workspace = next;
+            ShowGitStatus(null, null, "Reading Git status…");
+            GitFilter.Text = "";
             GitCommitMessage.Text = "";
             proposals.Clear();
             ResetConversation();
@@ -132,13 +140,22 @@ public partial class MainWindow
             SearchResults.ItemsSource = null;
             SearchSummary.Text = "";
             Status($"Workspace open · {next.Root}");
+            _ = TryAsync(RefreshGitAsync);
             await Task.WhenAll(
                 TryAsync(RefreshExplorerAsync),
-                TryAsync(RefreshGitAsync),
                 TryAsync(LoadHistoryAsync),
                 TryAsync(PersistPreferencesAsync));
         }
-        finally { switchingWorkspace = false; }
+        finally
+        {
+            switchingWorkspace = false;
+            if (pendingWorkspacePath is { } pending)
+            {
+                pendingWorkspacePath = null;
+                if (!lifetime.IsCancellationRequested)
+                    await SetWorkspaceAsync(pending);
+            }
+        }
     }
 
     private async Task RefreshExplorerAsync()
@@ -270,6 +287,8 @@ public partial class MainWindow
         ExplorerPane.IsVisible = pane == ExplorerPane;
         SearchPane.IsVisible = pane == SearchPane;
         GitPane.IsVisible = pane == GitPane;
+        if (pane != GitPane)
+            CloseGitReview();
         foreach (var navigation in new[] { ExplorerButton, SearchButton, GitButton })
             navigation.Classes.Set("active", navigation == button);
     }
@@ -386,8 +405,7 @@ public partial class MainWindow
             RunCommand.IsEnabled = true;
             StopCommand.IsEnabled = false;
         }
-        if (GitPane.IsVisible)
-            await RefreshGitAsync();
+        ScheduleGitRefresh();
     }
 
     private static async Task RelayAsync(StreamReader reader, ConcurrentQueue<string> output, CancellationToken cancellationToken)

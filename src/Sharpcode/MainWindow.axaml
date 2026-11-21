@@ -80,7 +80,15 @@
           <StackPanel Orientation="Horizontal" Spacing="3" VerticalAlignment="Center">
             <Button x:Name="ExplorerButton" Classes="quiet nav active" Content="Files" Click="OnExplorer" />
             <Button x:Name="SearchButton" Classes="quiet nav" Content="Search" Click="OnSearch" />
-            <Button x:Name="GitButton" Classes="quiet nav" Content="Git" Click="OnGit" />
+            <Button x:Name="GitButton" Classes="quiet nav" Click="OnGit" AutomationProperties.Name="Source control">
+              <StackPanel Orientation="Horizontal" Spacing="5">
+                <TextBlock Text="Git" VerticalAlignment="Center" />
+                <Border x:Name="GitBadge" IsVisible="False" Background="{DynamicResource AccentSurface}"
+                        CornerRadius="8" Padding="4,0" VerticalAlignment="Center">
+                  <TextBlock x:Name="GitBadgeCount" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource AccentInk}" />
+                </Border>
+              </StackPanel>
+            </Button>
           </StackPanel>
         </Border>
         <Grid Grid.Row="1" x:Name="ExplorerPane" RowDefinitions="Auto,*">
@@ -118,77 +126,94 @@
           </ListBox>
         </Grid>
         <Grid Grid.Row="1" x:Name="GitPane" IsVisible="False" RowDefinitions="Auto,Auto,*">
-          <Grid ColumnDefinitions="*,Auto,Auto" Margin="13,9,7,4">
+          <Grid.Resources>
+            <DataTemplate x:Key="GitChangeTemplate" x:DataType="local:GitChangeRow">
+              <Grid ColumnDefinitions="15,*,20,Auto" ColumnSpacing="5" ToolTip.Tip="{Binding Description}">
+                <Image Width="15" Height="15" Source="{Binding Icon}" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Directory}" IsVisible="{Binding HasDirectory}" Classes="muted"
+                             FontSize="10" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <TextBlock Grid.Column="2" Text="{Binding Code}" Classes="gitStatus" Classes.added="{Binding IsAdded}"
+                           Classes.attention="{Binding NeedsAttention}" FontFamily="{StaticResource Mono}" FontSize="11"
+                           FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                <Button Grid.Column="3" Classes="quiet" Content="{Binding ActionSymbol}" Click="OnGitRowAction"
+                        AutomationProperties.Name="{Binding ActionLabel}" ToolTip.Tip="{Binding ActionLabel}" Padding="6,3" />
+              </Grid>
+            </DataTemplate>
+          </Grid.Resources>
+          <Grid ColumnDefinitions="*,Auto,Auto" Margin="12,7,7,4">
             <TextBlock Text="SOURCE CONTROL" Classes="section" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
             <Button Grid.Column="1" x:Name="GitStopButton" Classes="quiet" IsVisible="False" Content="Stop" Click="OnGitStop" />
-            <Button Grid.Column="2" Classes="quiet" Content="↻" Click="OnRefreshGit" AutomationProperties.Name="Refresh Git" />
+            <Button Grid.Column="2" x:Name="GitRefreshButton" Classes="quiet" Content="↻" Click="OnRefreshGit"
+                    ToolTip.Tip="Refresh source control" AutomationProperties.Name="Refresh source control" />
           </Grid>
-          <TextBlock x:Name="GitSummary" Grid.Row="1" Margin="12,3,12,8" Classes="muted" TextWrapping="Wrap" />
-          <Button x:Name="GitInitButton" Grid.Row="2" Margin="12,4" VerticalAlignment="Top" Classes="primary"
-                  Content="Initialize Repository" IsVisible="False" Click="OnGitInit" />
-          <Grid x:Name="GitDetails" Grid.Row="2" IsVisible="False" RowDefinitions="Auto,Auto,Auto,Auto,Auto,*">
-            <Grid ColumnDefinitions="*,Auto" Margin="9,0,9,7" ColumnSpacing="5">
-              <Button x:Name="GitBranchButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
-                      Click="OnGitBranches" ToolTip.Tip="Switch branch" />
-              <Button Grid.Column="1" Content="⋯" AutomationProperties.Name="Git actions">
-                <Button.Flyout>
-                  <MenuFlyout>
-                    <MenuItem Header="Create Branch…" Click="OnGitCreateBranch" />
-                    <MenuItem Header="Add Remote…" Click="OnGitAddRemote" />
-                    <Separator />
-                    <MenuItem Header="Fetch…" Click="OnGitFetch" />
-                    <MenuItem Header="Pull" Click="OnGitPull" />
-                    <MenuItem Header="Push" Click="OnGitPush" />
-                    <Separator />
-                    <MenuItem Header="Recent Commits…" Click="OnGitHistory" />
-                  </MenuFlyout>
-                </Button.Flyout>
-              </Button>
-            </Grid>
-            <TextBox Grid.Row="1" x:Name="GitCommitMessage" Margin="9,0,9,6" PlaceholderText="Commit message"
-                     TextWrapping="Wrap" AcceptsReturn="True" MaxHeight="82" TextChanged="OnGitCommitTextChanged" />
-            <Grid Grid.Row="2" ColumnDefinitions="*,*" ColumnSpacing="6" Margin="9,0,9,8">
-              <Button x:Name="GitCommitButton" Content="Commit" Classes="primary" HorizontalAlignment="Stretch"
-                      Click="OnGitCommit" IsEnabled="False" />
-              <Button x:Name="GitPushButton" Grid.Column="1" Content="Push" HorizontalAlignment="Stretch"
-                      Click="OnGitPush" IsEnabled="False" />
-            </Grid>
-            <Grid Grid.Row="3" ColumnDefinitions="*,Auto" Margin="9,0,9,0">
-              <TextBlock x:Name="GitStagedTitle" Text="STAGED" Classes="section" VerticalAlignment="Center" />
-              <Button x:Name="GitUnstageAllButton" Grid.Column="1" Classes="quiet" Content="Unstage All" Click="OnGitUnstageAll" />
-            </Grid>
-            <ListBox x:Name="GitStaged" Grid.Row="4" MaxHeight="142" Tapped="OnGitStagedDiff"
-                     KeyDown="OnGitStagedKeyDown" AutomationProperties.Name="Staged changes">
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="core:GitChange">
-                  <Grid ColumnDefinitions="17,*,Auto" ColumnSpacing="4" ToolTip.Tip="{Binding Path}">
-                    <TextBlock Text="{Binding Index}" Foreground="{DynamicResource AccentInk}" VerticalAlignment="Center" />
-                    <TextBlock Grid.Column="1" Text="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                    <Button Grid.Column="2" Classes="quiet" Content="−" Click="OnGitUnstageFile"
-                            AutomationProperties.Name="Unstage file" ToolTip.Tip="Unstage file" Padding="6,1" />
+          <TextBlock x:Name="GitSummary" Grid.Row="1" Text="Open a folder to use source control."
+                     Margin="12,1,12,9" Classes="muted" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+          <StackPanel x:Name="GitEmptyActions" Grid.Row="2" Margin="12,2" Spacing="6" VerticalAlignment="Top">
+            <Button x:Name="GitOpenFolderButton" Content="Open Folder…" Classes="primary launch" Click="OnOpenFolder" />
+            <Button x:Name="GitCloneButton" Content="Clone Repository…" Classes="launch" Click="OnGitClone" />
+            <Button x:Name="GitInitButton" Content="Initialize Repository" Classes="primary launch" IsVisible="False" Click="OnGitInit" />
+          </StackPanel>
+          <Grid x:Name="GitDetails" Grid.Row="2" IsVisible="False" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto,*">
+            <Border Background="{DynamicResource Raised}" BorderBrush="{DynamicResource Divider}" BorderThickness="1"
+                    CornerRadius="7" Margin="9,0,9,9" Padding="7">
+              <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="5" RowSpacing="5">
+                <Button x:Name="GitBranchButton" Classes="quiet" Padding="4,3" HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Stretch" Click="OnGitBranches" AutomationProperties.Name="Switch Git branch">
+                  <Grid ColumnDefinitions="13,*,Auto" ColumnSpacing="6">
+                    <Image Width="13" Height="13" Source="/Assets/Material/git.png" />
+                    <TextBlock x:Name="GitBranchName" Grid.Column="1" FontWeight="SemiBold" Foreground="{DynamicResource Ink}"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Column="2" Text="▾" />
                   </Grid>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
-            <Grid Grid.Row="5" RowDefinitions="Auto,*">
-              <Grid ColumnDefinitions="*,Auto" Margin="9,3,9,0">
-                <TextBlock x:Name="GitWorkingTitle" Text="CHANGES" Classes="section" VerticalAlignment="Center" />
-                <Button x:Name="GitStageAllButton" Grid.Column="1" Classes="quiet" Content="Stage All" Click="OnGitStageAll" />
+                </Button>
+                <Button Grid.Column="1" Classes="quiet" Content="⋯" Padding="6,2" ToolTip.Tip="Git actions" AutomationProperties.Name="Git actions">
+                  <Button.Flyout>
+                    <MenuFlyout>
+                      <MenuItem Header="Create Branch…" Click="OnGitCreateBranch" />
+                      <MenuItem Header="Add Remote…" Click="OnGitAddRemote" />
+                      <Separator />
+                      <MenuItem x:Name="GitFetchMenu" Header="Fetch…" Click="OnGitFetch" />
+                      <MenuItem x:Name="GitPullMenu" Header="Pull" Click="OnGitPull" />
+                      <MenuItem x:Name="GitPushMenu" Header="Push" Click="OnGitPush" />
+                      <Separator />
+                      <MenuItem x:Name="GitHistoryMenu" Header="Recent Commits…" Click="OnGitHistory" />
+                    </MenuFlyout>
+                  </Button.Flyout>
+                </Button>
+                <TextBlock x:Name="GitSyncDetails" Grid.Row="1" Grid.ColumnSpan="2" Classes="muted"
+                           FontSize="11" Margin="4,0" TextTrimming="CharacterEllipsis" />
+                <Button x:Name="GitSyncButton" Grid.Row="2" Grid.ColumnSpan="2" HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center" Click="OnGitSync" Padding="6,4" />
               </Grid>
-              <ListBox x:Name="GitWorking" Grid.Row="1" Tapped="OnGitWorkingDiff"
-                       KeyDown="OnGitWorkingKeyDown" AutomationProperties.Name="Working tree changes">
-                <ListBox.ItemTemplate>
-                  <DataTemplate x:DataType="core:GitChange">
-                    <Grid ColumnDefinitions="17,*,Auto" ColumnSpacing="4" ToolTip.Tip="{Binding Path}">
-                      <TextBlock Text="{Binding Worktree}" Foreground="{DynamicResource Lavender}" VerticalAlignment="Center" />
-                      <TextBlock Grid.Column="1" Text="{Binding Path}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                      <Button Grid.Column="2" Classes="quiet" Content="+" Click="OnGitStageFile"
-                              AutomationProperties.Name="Stage file" ToolTip.Tip="Stage file" Padding="6,1" />
-                    </Grid>
-                  </DataTemplate>
-                </ListBox.ItemTemplate>
-              </ListBox>
+            </Border>
+            <StackPanel Grid.Row="1" Margin="9,0,9,8" Spacing="5">
+              <TextBox x:Name="GitCommitMessage" PlaceholderText="Commit message" TextWrapping="Wrap" AcceptsReturn="True"
+                       MinHeight="45" MaxHeight="82" TextChanged="OnGitCommitTextChanged" AutomationProperties.Name="Commit message" />
+              <Button x:Name="GitCommitButton" Content="Commit" Classes="primary" HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Center" Click="OnGitCommit" IsEnabled="False" />
+              <TextBlock x:Name="GitCommitHint" Classes="muted" FontSize="11" TextWrapping="Wrap" />
+            </StackPanel>
+            <TextBox Grid.Row="2" x:Name="GitFilter" Margin="9,0,9,5" PlaceholderText="Filter changed files"
+                     TextChanged="OnGitFilterChanged" AutomationProperties.Name="Filter changed files" />
+            <Grid x:Name="GitStagedGroup" Grid.Row="3" ColumnDefinitions="*,Auto" Margin="8,0,8,0">
+              <ToggleButton x:Name="GitStagedTitle" Classes="gitGroup" IsChecked="True" Click="OnGitGroupToggled" />
+              <Button x:Name="GitUnstageAllButton" Grid.Column="1" Classes="quiet" Content="Unstage All" Padding="4,3"
+                      ToolTip.Tip="Unstage all staged files" Click="OnGitUnstageAll" />
             </Grid>
+            <ListBox x:Name="GitStaged" Grid.Row="4" Classes="gitChanges" ItemTemplate="{StaticResource GitChangeTemplate}"
+                     Tapped="OnGitDiffTapped" KeyDown="OnGitDiffKeyDown" AutomationProperties.Name="Staged changes" />
+            <Grid x:Name="GitWorkingGroup" Grid.Row="5" ColumnDefinitions="*,Auto" Margin="8,0,8,0">
+              <ToggleButton x:Name="GitWorkingTitle" Classes="gitGroup" IsChecked="True" Click="OnGitGroupToggled" />
+              <Button x:Name="GitStageAllButton" Grid.Column="1" Classes="quiet" Content="Stage All" Padding="4,3"
+                      ToolTip.Tip="Stage all working tree changes" Click="OnGitStageAll" />
+            </Grid>
+            <ListBox x:Name="GitWorking" Grid.Row="6" Classes="gitChanges" ItemTemplate="{StaticResource GitChangeTemplate}"
+                     Tapped="OnGitDiffTapped" KeyDown="OnGitDiffKeyDown" AutomationProperties.Name="Working tree changes" />
+            <TextBlock x:Name="GitChangesEmpty" Grid.Row="3" Grid.RowSpan="4" Margin="12,9" VerticalAlignment="Top"
+                       Classes="muted" TextWrapping="Wrap" IsVisible="False" />
           </Grid>
         </Grid>
       </Grid>
@@ -297,6 +322,27 @@
             </StackPanel>
           </StackPanel>
         </ScrollViewer>
+
+        <Border x:Name="GitReviewPane" IsVisible="False" Background="{DynamicResource Canvas}">
+          <Grid RowDefinitions="Auto,*">
+            <Border Background="{DynamicResource Panel}" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1" Padding="13,9">
+              <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="4">
+                <TextBlock x:Name="GitReviewTitle" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
+                <StackPanel x:Name="GitReviewActions" Grid.Column="1" Orientation="Horizontal" Spacing="5">
+                  <Button x:Name="GitReviewOpenButton" Content="Open File" Classes="quiet" Click="OnGitReviewOpenFile" />
+                  <Button x:Name="GitReviewStageButton" Click="OnGitReviewStage" />
+                </StackPanel>
+                <Button Grid.Column="2" Content="×" Classes="quiet" Click="OnGitReviewClose" ToolTip.Tip="Close diff (Esc)"
+                        AutomationProperties.Name="Close diff" />
+                <TextBlock x:Name="GitReviewDetails" Grid.Row="1" Grid.ColumnSpan="3" Classes="muted" TextTrimming="CharacterEllipsis" />
+              </Grid>
+            </Border>
+            <editor:TextEditor x:Name="GitDiffEditor" Grid.Row="1" Margin="12,8,0,0" IsReadOnly="True" FontFamily="{StaticResource Mono}" FontSize="13"
+                               Foreground="{DynamicResource Ink}" Background="{DynamicResource Canvas}" LineNumbersForeground="{DynamicResource Quiet}"
+                               HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" AutomationProperties.Name="Git diff" />
+          </Grid>
+        </Border>
 
         <Border Grid.Row="1" x:Name="OutputPane" IsVisible="False" Height="220" Background="{DynamicResource Panel}"
                 BorderThickness="0,1,0,0" BorderBrush="{DynamicResource Divider}" Padding="8">

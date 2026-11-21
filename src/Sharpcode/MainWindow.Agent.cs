@@ -452,8 +452,7 @@ public partial class MainWindow
             Status($"Applied · {change.RelativePath}");
             if (change.IsNew)
                 await RefreshExplorerAsync();
-            if (GitPane.IsVisible)
-                await RefreshGitAsync();
+            ScheduleGitRefresh();
         }
         finally
         {
