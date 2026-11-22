@@ -37,9 +37,12 @@ public partial class MainWindow
 
     private void RefreshWelcome()
     {
-        WelcomeTitle.Text = workspace?.Name ?? "Get started";
-        WelcomeDescription.Text = workspace is null ? "Open a folder to edit and search a project."
-            : "Find a file by name or select one in the sidebar.";
+        WelcomeTitle.Text = workspace?.Name ?? "Open a workspace";
+        WelcomePath.Text = workspace?.Root;
+        WelcomePath.IsVisible = workspace is not null;
+        ToolTip.SetTip(WelcomePath, workspace?.Root);
+        WelcomeDescription.Text = workspace is null ? "Open a project folder to browse its files, search across them, and see Git changes."
+            : "Find a file by name or browse project files in the sidebar.";
         WelcomeOpenFolder.IsVisible = workspace is null;
         WelcomeBrowse.IsVisible = workspace is not null;
         var folders = RecentFolders().Take(4).ToArray();
@@ -127,19 +130,26 @@ public partial class MainWindow
             ResetConversation();
             var recent = RecentPaths().Prepend(next.Root).Distinct(Workspace.PathComparer).Take(8).ToArray();
             preferences = preferences with { LastWorkspace = next.Root, RecentWorkspaces = recent };
-            WorkspaceButton.Content = $"{next.Name}  ▾";
+            WorkspaceName.Text = next.Name;
+            Automation.SetName(WorkspaceButton, $"Switch workspace, current folder {next.Name}");
             ToolTip.SetTip(WorkspaceButton, next.Root);
-            ExplorerTitle.Text = next.Name.ToUpperInvariant();
-            ExplorerEmpty.IsVisible = false;
-            FileTree.IsVisible = true;
+            ExplorerTitle.Text = next.Name;
+            ToolTip.SetTip(ExplorerTitle, next.Root);
+            RefreshExplorerButton.IsVisible = true;
+            ExplorerOpenFolder.IsVisible = false;
+            FileTree.Items.Clear();
+            FileTree.IsVisible = false;
+            ExplorerMessage.Text = "Loading files…";
+            ExplorerEmpty.IsVisible = true;
             Title = $"{next.Name} · Sharpcode";
             if (activeTab is { } tab)
                 UpdateBreadcrumbAndSyntax(tab);
             SelectSidebar(ExplorerPane, ExplorerButton, reveal: false);
             RefreshWelcome();
             UpdateAgentComposer();
+            SearchInput.Text = "";
             SearchResults.ItemsSource = null;
-            SearchSummary.Text = "";
+            UpdateSearchScope();
             Status($"Workspace open · {next.Root}");
             _ = TryAsync(RefreshGitAsync);
             await Task.WhenAll(
@@ -166,11 +176,24 @@ public partial class MainWindow
         current.InvalidateFileIndex();
         var revision = ++explorerRevision;
         var expanded = ExpandedFolders(FileTree.Items).ToHashSet(Workspace.PathComparer);
-        var entries = await Task.Run(() => current.Children("", lifetime.Token), lifetime.Token);
+        IReadOnlyList<WorkspaceEntry> entries;
+        try
+        {
+            entries = await Task.Run(() => current.Children("", lifetime.Token), lifetime.Token);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            if (workspace == current && explorerRevision == revision && !FileTree.IsVisible)
+                ExplorerMessage.Text = "Couldn’t read this folder. Refresh to try again.";
+            throw;
+        }
         if (workspace != current || explorerRevision != revision)
             return;
         FileTree.Items.Clear();
         PopulateTree(FileTree, entries, current, expanded, 0, revision);
+        FileTree.IsVisible = entries.Count > 0;
+        ExplorerEmpty.IsVisible = !FileTree.IsVisible;
+        ExplorerMessage.Text = "This folder has no files to display.";
     }
 
     private static IEnumerable<string> ExpandedFolders(ItemCollection items)
@@ -267,6 +290,11 @@ public partial class MainWindow
     private void ShowSearch()
     {
         SelectSidebar(SearchPane, SearchButton);
+        if (workspace is null)
+        {
+            SearchOpenFolder.Focus();
+            return;
+        }
         if (Editor.SelectionLength is > 0 and <= 128 && !Editor.SelectedText.Contains('\n'))
             SearchInput.Text = Editor.SelectedText;
         SearchInput.Focus();
@@ -302,7 +330,7 @@ public partial class MainWindow
         SearchResults.ItemsSource = null;
         if (workspace is not { } current || query.Length == 0)
         {
-            SearchSummary.Text = workspace is null ? "Open a folder to search its files." : "Search for text across the workspace.";
+            UpdateSearchScope();
             return;
         }
 
@@ -313,10 +341,22 @@ public partial class MainWindow
         {
             await Task.Delay(220, cancel.Token);
             var results = await Task.Run(() => current.SearchAsync(query, 400, forAgent: false, cancel.Token), cancel.Token);
-            if (searchCancellation != cancel || workspace != current)
+            if (searchCancellation != cancel || cancel.IsCancellationRequested || workspace != current)
                 return;
             SearchResults.ItemsSource = results;
-            SearchSummary.Text = results.Count == 400 ? "First 400 matching lines" : $"{results.Count:N0} matching lines";
+            SearchSummary.Text = results.Count switch
+            {
+                0 => "No matches. Try a different word or phrase.",
+                1 => "1 matching line",
+                400 => "First 400 matching lines",
+                _ => $"{results.Count:N0} matching lines"
+            };
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            if (searchCancellation == cancel && !cancel.IsCancellationRequested && workspace == current)
+                SearchSummary.Text = "Search couldn’t finish. Edit your query to try again.";
+            throw;
         }
         finally
         {
@@ -325,8 +365,19 @@ public partial class MainWindow
         }
     }
 
+    private void UpdateSearchScope()
+    {
+        SearchInput.IsEnabled = workspace is not null;
+        SearchOpenFolder.IsVisible = workspace is null;
+        SearchSummary.Text = workspace is null ? "Open a folder to search its files."
+            : $"Search text across files in {workspace.Name}.";
+    }
+
     private Task OpenSearchResultAsync() =>
-        workspace is { } current && SearchResults.SelectedItem is SearchHit hit
+        OpenSearchResultAsync(SearchResults.SelectedItem as SearchHit);
+
+    private Task OpenSearchResultAsync(SearchHit? hit) =>
+        workspace is { } current && hit is not null
             ? OpenDocumentAsync(current.Resolve(hit.Path), hit.Line, hit.Column) : Task.CompletedTask;
 
     private void ToggleOutput()
@@ -337,6 +388,8 @@ public partial class MainWindow
             ProblemsPane.IsVisible = false;
             CommandInput.Focus();
         }
+        else if (Editor.IsEffectivelyVisible)
+            Editor.TextArea.Focus();
     }
 
     private Task RunTypedCommandAsync()
@@ -445,7 +498,11 @@ public partial class MainWindow
         await TryAsync(() => ActivateTreeEntryAsync(item));
     }
     private async void OnSearchChanged(object? sender, TextChangedEventArgs e) => await TryAsync(SearchWorkspaceAsync);
-    private async void OnSearchOpen(object? sender, TappedEventArgs e) => await TryAsync(OpenSearchResultAsync);
+    private async void OnSearchOpen(object? sender, TappedEventArgs e)
+    {
+        if (e.Source is Avalonia.Visual source && source.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext is SearchHit hit)
+            await TryAsync(() => OpenSearchResultAsync(hit));
+    }
     private async void OnTreeKeyDown(object? sender, KeyEventArgs e) =>
         await RunOnEnterAsync(e, () => ActivateTreeEntryAsync(FileTree.SelectedItem as TreeViewItem));
     private void OnClearSearch(object? sender, RoutedEventArgs e)

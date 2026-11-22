@@ -141,6 +141,8 @@ public partial class MainWindow
         GitEmptyActions.IsVisible = status is null;
         GitEmptyActions.IsEnabled = gitOperation is null;
         GitRefreshButton.IsEnabled = gitOperation is null && gitStatusRead is null;
+        StatusBranchButton.IsVisible = status is not null;
+        StatusFetchButton.IsVisible = gitRemotes.Count > 0;
         StatusBranchButton.IsEnabled = status is not null && gitOperation is null;
         StatusFetchButton.IsEnabled = gitRemotes.Count > 0 && gitOperation is null;
         GitInitButton.IsVisible = canInitialize;
@@ -150,7 +152,15 @@ public partial class MainWindow
         GitSummary.Text = message;
         GitBadge.IsVisible = status is { Changes.Count: > 0 };
         GitBadgeCount.Text = status is { Changes.Count: > 99 } ? "99+" : $"{status?.Changes.Count}";
-        ToolTip.SetTip(GitButton, status is null ? "Source control" : $"{status.Changes.Count:N0} changed files");
+        var changeCount = status?.Changes.Count;
+        var gitLabel = changeCount switch
+        {
+            null => "Source control",
+            1 => "Source control, 1 changed file",
+            _ => $"Source control, {changeCount:N0} changed files"
+        };
+        Automation.SetName(GitButton, gitLabel);
+        ToolTip.SetTip(GitButton, gitLabel);
         if (changesUpdated)
         {
             gitStagedRows = status?.Changes.Where(change => change.IsStaged).Select(change => new GitChangeRow(change, true)).ToArray() ?? [];
@@ -235,10 +245,10 @@ public partial class MainWindow
         GitDetails.RowDefinitions[4].MaxHeight = GitWorking.IsVisible ? Math.Min(175, staged * 34d + 5) : double.PositiveInfinity;
         GitDetails.RowDefinitions[6].Height = GitWorking.IsVisible ? new GridLength(1.4, GridUnitType.Star) : new GridLength(0);
         GitStagedTitle.Content = GroupTitle("Staged", staged, gitStagedRows.Length, GitStagedTitle.IsChecked == true);
-        GitWorkingTitle.Content = GroupTitle("Changes", working, gitWorkingRows.Length, GitWorkingTitle.IsChecked == true);
+        GitWorkingTitle.Content = GroupTitle("Unstaged", working, gitWorkingRows.Length, GitWorkingTitle.IsChecked == true);
         GitChangesEmpty.IsVisible = staged + working == 0;
         GitChangesEmpty.Text = GitFilter.IsVisible ? "No changed files match the filter."
-            : gitStatus is { HasCommit: false } ? "Save a file to start tracking changes." : "Working tree is clean.";
+            : gitStatus is { HasCommit: false } ? "Save a file, then stage it to prepare your first commit." : "No changes to commit.";
         ToolTip.SetTip(GitStageAllButton, working == gitWorkingRows.Length ? "Stage all working tree changes" : "Stage all changes, including filtered-out files");
         ToolTip.SetTip(GitUnstageAllButton, staged == gitStagedRows.Length ? "Unstage all staged files" : "Unstage all files, including filtered-out files");
     }

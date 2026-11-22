@@ -35,7 +35,7 @@ public partial class MainWindow
         proposals.CollectionChanged += (_, _) =>
         {
             ReviewPane.IsVisible = proposals.Count > 0;
-            ReviewTitle.Text = proposals.Count == 1 ? "1 DRAFT FILE" : $"{proposals.Count} DRAFT FILES";
+            ReviewTitle.Text = proposals.Count == 1 ? "1 draft file" : $"{proposals.Count} draft files";
             if (proposals.Count > 0 && ReviewFiles.SelectedIndex < 0)
                 ReviewFiles.SelectedIndex = 0;
         };
@@ -81,10 +81,13 @@ public partial class MainWindow
             ? "Describe the changes to draft" : "Ask a question about your code";
         ToolTip.SetTip(AgentModePicker, workspace is null ? "Open a folder to draft file changes."
             : "Ask reads workspace files. Edit files can also draft changes for review.");
-        ChatWelcomeDescription.Text = workspace is null
-            ? "Open a folder to give the agent workspace context."
-            : "Ask a question or choose Edit files to draft a change for review.";
-        AgentStarters.IsVisible = workspace is not null;
+        ChatWelcomeDescription.Text = (configured, workspace is not null) switch
+        {
+            (false, _) => "Connect a model to ask questions and draft changes.",
+            (true, false) => "Open a folder to let the agent read project files, or attach text from an open file.",
+            _ => "Use Ask to explore your code. Choose Edit files to draft changes you can review before applying."
+        };
+        AgentStarters.IsVisible = configured && workspace is not null;
         SendButton.Content = configured ? "Send" : "Set Up & Send";
         UpdateSendState();
         NewChatButton.IsEnabled = !busy;

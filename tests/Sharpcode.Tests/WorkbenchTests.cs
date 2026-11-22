@@ -18,6 +18,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Sharpcode.Core;
+using Ellipse = Avalonia.Controls.Shapes.Ellipse;
 
 [assembly: AvaloniaTestApplication(typeof(Sharpcode.Tests.TestAppBuilder))]
 
@@ -124,6 +125,48 @@ public sealed class WorkbenchTests
         await UntilAsync(() => window.FindControl<TextEditor>("Editor")!.Text == "// Workspace fixture", token);
         window.Close();
         await UntilAsync(() => !window.IsVisible, token);
+    }
+
+    [AvaloniaFact]
+    public async Task WorkspaceSearchExplainsEmptyResultsAndOpensTheClickedMatch()
+    {
+        using var data = new TestDirectory();
+        using var project = new TestDirectory();
+        using var settings = new SettingsOverride(Environment.GetEnvironmentVariable("SHARPCODE_DATA_DIR"));
+        Environment.SetEnvironmentVariable("SHARPCODE_DATA_DIR", data.Path);
+        var token = TestContext.Current.CancellationToken;
+        var sourceFolder = Directory.CreateDirectory(Path.Combine(project.Path, "src"));
+        const string source = "First line\nA searchable phrase\n";
+        await File.WriteAllTextAsync(Path.Combine(sourceFolder.FullName, "notes.txt"), source, token);
+
+        var window = new MainWindow(project.Path);
+        window.Show();
+        try
+        {
+            await UntilAsync(() => window.FindControl<Button>("WelcomeBrowse")!.IsVisible, token);
+            window.FindControl<Button>("SearchButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var summary = window.FindControl<TextBlock>("SearchSummary")!;
+            Assert.Contains(Path.GetFileName(project.Path), summary.Text);
+            var input = window.FindControl<TextBox>("SearchInput")!;
+            input.Text = "missing from the project";
+            await UntilAsync(() => summary.Text?.StartsWith("No matches.", StringComparison.Ordinal) == true, token);
+
+            input.Text = "searchable phrase";
+            var results = window.FindControl<ListBox>("SearchResults")!;
+            await UntilAsync(() => results.GetVisualDescendants().OfType<TextBlock>()
+                .Any(block => block.Text == "notes.txt:2" && block.Bounds.Width > 0), token);
+            Assert.Equal("1 matching line", summary.Text);
+            var match = results.GetVisualDescendants().OfType<TextBlock>().Single(block => block.Text == "notes.txt:2");
+            ClickAt(window, match, new Point(5, match.Bounds.Height / 2));
+            var editor = window.FindControl<TextEditor>("Editor")!;
+            await UntilAsync(() => editor.Text == source && editor.TextArea.Caret.Line == 2, token);
+            Assert.Equal(3, editor.TextArea.Caret.Column);
+        }
+        finally
+        {
+            window.Close();
+            await UntilAsync(() => !window.IsVisible, token);
+        }
     }
 
     [AvaloniaFact]
@@ -302,8 +345,11 @@ public sealed class WorkbenchTests
         var primary = OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control;
         Press(window, Key.N, primary);
         var tabs = window.FindControl<ListBox>("Tabs")!;
-        await UntilAsync(() => tabs.GetVisualDescendants().OfType<TextBlock>().Any(block => block.Text == "README.md •" && block.Bounds.Width > 0), token);
-        var previous = tabs.GetVisualDescendants().OfType<TextBlock>().Single(block => block.Text == "README.md •");
+        await UntilAsync(() => tabs.GetVisualDescendants().OfType<TextBlock>().Any(block => block.Text == "README.md" && block.Bounds.Width > 0), token);
+        var previous = tabs.GetVisualDescendants().OfType<TextBlock>().Single(block => block.Text == "README.md");
+        var previousTab = previous.FindAncestorOfType<ListBoxItem>()!;
+        Assert.Contains(previousTab.GetVisualDescendants().OfType<Ellipse>(), indicator =>
+            indicator.Classes.Contains("unsavedIndicator") && indicator.IsEffectivelyVisible);
         ClickAt(window, previous, new Point(5, previous.Bounds.Height / 2), MouseButton.Middle);
         await UntilAsync(() => window.OwnedWindows.Count == 1, token);
         Assert.StartsWith("Untitled", Assert.IsType<EditorTab>(tabs.SelectedItem).Title);

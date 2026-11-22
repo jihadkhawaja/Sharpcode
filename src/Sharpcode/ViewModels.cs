@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text;
+using Avalonia.Media.Imaging;
 using AvaloniaEdit.Document;
 using Sharpcode.Core;
 
@@ -28,10 +29,9 @@ public sealed class EditorTab : INotifyPropertyChanged
     public byte[] Version { get; private set; }
     public TextDocument Document { get; }
     public bool IsDirty => !Document.UndoStack.IsOriginalFile;
-    public string Label => IsDirty ? $"{Title} •" : Title;
-    public string FileType => System.IO.Path.GetExtension(Path)?.TrimStart('.') is { Length: > 0 } extension
-        ? extension.ToUpperInvariant()[..Math.Min(4, extension.Length)]
-        : "TXT";
+    public string Label => IsDirty ? $"{Title}, unsaved changes" : Title;
+    public string DisplayPath => Path ?? Title;
+    public Bitmap Icon => MaterialExplorerIcons.For(Title, directory: false);
     public int Caret { get; set; }
     public double VerticalOffset { get; set; }
     public bool IsSaving { get; set; }
@@ -47,10 +47,16 @@ public sealed class EditorTab : INotifyPropertyChanged
         if (isCurrentVersion)
             Document.UndoStack.MarkAsOriginalFile();
         RefreshLabel();
-        PropertyChanged?.Invoke(this, new(nameof(FileType)));
+        PropertyChanged?.Invoke(this, new(nameof(Title)));
+        PropertyChanged?.Invoke(this, new(nameof(DisplayPath)));
+        PropertyChanged?.Invoke(this, new(nameof(Icon)));
     }
 
-    private void RefreshLabel() => PropertyChanged?.Invoke(this, new(nameof(Label)));
+    private void RefreshLabel()
+    {
+        PropertyChanged?.Invoke(this, new(nameof(Label)));
+        PropertyChanged?.Invoke(this, new(nameof(IsDirty)));
+    }
 
     public void Reload(FileSnapshot snapshot)
     {

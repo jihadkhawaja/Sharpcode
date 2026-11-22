@@ -18,8 +18,8 @@ public partial class MainWindow : Window
     private Workspace? workspace;
     private bool confirmedClose;
     private bool checkingClose;
-    private GridLength sidebarWidth = new(228);
-    private GridLength agentWidth = new(340);
+    private GridLength sidebarWidth = new(248);
+    private GridLength agentWidth = new(352);
     private bool preferAgentInCompactLayout;
     private Key? chord;
     private DateTimeOffset chordAt;
@@ -39,6 +39,7 @@ public partial class MainWindow : Window
         OpenFileShortcut.Text = $"{PrimaryLabel}O";
         NewFileShortcut.Text = $"{PrimaryLabel}N";
         RefreshWelcome();
+        UpdateSearchScope();
         UpdateDockLayout(Width);
         Workbench.SizeChanged += (_, args) => UpdateDockLayout(args.NewSize.Width);
         AddHandler(KeyDownEvent, OnShortcut, RoutingStrategies.Tunnel);
@@ -179,10 +180,19 @@ public partial class MainWindow : Window
             agent = preferAgentInCompactLayout;
         }
 
-        UpdateDock(Sidebar, SidebarSplitter, 0, 1, sidebar, ref sidebarWidth, 175, 320);
+        UpdateDock(Sidebar, SidebarSplitter, 0, 1, sidebar, ref sidebarWidth, 190, 320);
         UpdateDock(AgentPane, AgentSplitter, 4, 3, agent, ref agentWidth, 280, 440);
         SidebarToggle.Classes.Set("active", sidebar);
         AgentToggle.Classes.Set("active", agent);
+        SetPanelToggleLabel(SidebarToggle, sidebar ? "Hide sidebar" : "Show sidebar", $"{PrimaryLabel}B");
+        SetPanelToggleLabel(AgentToggle, agent ? "Hide coding agent" : "Show coding agent",
+            agent ? null : OperatingSystem.IsMacOS() ? "⌃⌘I" : "Ctrl+Alt+I");
+    }
+
+    private static void SetPanelToggleLabel(Button button, string action, string? shortcut)
+    {
+        Automation.SetName(button, action);
+        ToolTip.SetTip(button, shortcut is null ? action : $"{action} ({shortcut})");
     }
 
     private void UpdateDock(Control pane, GridSplitter splitter, int column, int divider, bool visible,

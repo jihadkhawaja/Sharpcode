@@ -5,30 +5,33 @@ namespace Sharpcode;
 
 internal static class WorkbenchPalette
 {
-    private sealed record Colors(string Canvas, string Panel, string Raised, string Divider, string Ink,
+    private sealed record Colors(string Canvas, string Chrome, string Panel, string Raised, string Divider, string Ink,
         string Muted, string Quiet, string Accent, string Lavender, string Danger, string Added);
 
     public static void Apply(App app, AppearanceSettings settings, bool light)
     {
         var values = light
-            ? new Colors("#FAFBFD", "#EFF2F7", "#E4EAF3", "#CBD4E1", "#171F2E", "#48566C", "#5C6B82", "#14785C", "#5842A6", "#A0263A", "#156749")
+            ? new Colors("#FAFBFD", "#E9EDF4", "#F1F4F8", "#E1E7F0", "#CBD4E1", "#171F2E", "#48566C", "#5C6B82", "#14785C", "#5842A6", "#A0263A", "#156749")
             : settings.Theme == WorkbenchTheme.Midnight
-                ? new Colors("#0C1425", "#111E34", "#172944", "#2D415E", "#E8F0FF", "#ACBDD5", "#8EA1BE", "#8DD9FC", "#C4B7FF", "#FDA5AB", "#91E9BD")
-                : new Colors("#101219", "#161923", "#1D2230", "#303546", "#E5E9F4", "#A1ABBE", "#7D889D", "#A8F5CB", "#B9ACFF", "#FDA5AB", "#A8F5CB");
+                ? new Colors("#0C1425", "#0F192D", "#111E34", "#172944", "#2D415E", "#E8F0FF", "#ACBDD5", "#8EA1BE", "#8DD9FC", "#C4B7FF", "#FDA5AB", "#91E9BD")
+                : new Colors("#101219", "#13161F", "#181C26", "#222836", "#333B4A", "#E7EBF3", "#ABB5C8", "#808DA3", "#A8F5CB", "#B9ACFF", "#FDA5AB", "#A8F5CB");
 
         var panel = Color.Parse(values.Panel);
+        var canvas = Color.Parse(values.Canvas);
+        var chrome = Color.Parse(values.Chrome);
         var ink = Color.Parse(values.Ink);
         var accent = Color.Parse(settings.Accent ?? values.Accent);
         var active = Mix(panel, accent, light ? .12 : .16);
         var activeHover = Mix(panel, accent, light ? .19 : .23);
-        var accentInk = ReadableAccent(accent, ink, panel, active, activeHover);
+        var accentInk = ReadableAccent(accent, ink, panel, chrome, canvas, active, activeHover);
         var accentHover = Mix(accent, light ? ColorsBlack : ColorsWhite, .11);
         var onAccent = Contrast(ColorsBlack, accent) >= Contrast(ColorsWhite, accent) ? ColorsBlack : ColorsWhite;
         var onAccentHover = Contrast(ColorsBlack, accentHover) >= Contrast(ColorsWhite, accentHover) ? ColorsBlack : ColorsWhite;
 
         void Set(string name, Color value) => app.Resources[name] = new SolidColorBrush(value);
         void SetHex(string name, string value) => Set(name, Color.Parse(value));
-        SetHex("Canvas", values.Canvas);
+        Set("Canvas", canvas);
+        Set("Chrome", chrome);
         Set("Panel", panel);
         SetHex("Raised", values.Raised);
         SetHex("Divider", values.Divider);

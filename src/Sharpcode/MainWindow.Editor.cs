@@ -155,8 +155,10 @@ public partial class MainWindow
     {
         UpdateAttachment();
         var displayPath = tab.Path is null ? tab.Title : workspace?.Relative(tab.Path) ?? tab.Path;
-        Breadcrumb.Text = displayPath.Replace('/', '›').Replace('\\', '›').Replace("›", "  ›  ");
-        ToolTip.SetTip(Breadcrumb, tab.Path ?? tab.Title);
+        var directory = displayPath[..(displayPath.Length - tab.Title.Length)];
+        BreadcrumbDirectory.Text = directory.Replace("/", "  ›  ").Replace("\\", "  ›  ");
+        BreadcrumbFile.Text = tab.Title;
+        ToolTip.SetTip(Breadcrumb, tab.DisplayPath);
         UpdateEditorLanguage(tab);
     }
 
