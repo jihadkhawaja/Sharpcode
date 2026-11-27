@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using AvaloniaEdit.Document;
 using Sharpcode.Core;
 
 namespace Sharpcode;
@@ -125,27 +126,38 @@ public partial class MainWindow : Window
         checkingClose = true;
         try
         {
-            if (openTabs.Any(tab => tab.IsSaving) || agentApplying || gitWorktreeUpdating)
+            if (FileWriteInProgress)
             {
                 Status("Wait for the current file write to finish.");
                 return;
             }
-            if (proposals.Count > 0 && !await ConfirmAsync("Discard proposed changes?", "Unapplied agent drafts will be cleared.", "Discard"))
+            var reviewedDrafts = proposals.ToArray();
+            if (reviewedDrafts.Length > 0 && !await ConfirmAsync("Discard proposed changes?", "Unapplied agent drafts will be cleared.", "Discard"))
                 return;
+            var reviewedTabs = new Dictionary<EditorTab, ITextSourceVersion>();
             foreach (var tab in openTabs.Where(tab => tab.IsDirty).ToArray())
             {
-                var decision = await UnsavedAsync(tab);
-                if (decision is null or "Cancel" || (decision == "Save" && !await SaveTabAsync(tab)))
+                if (!await ConfirmTabCloseAsync(tab))
                     return;
+                reviewedTabs.Add(tab, tab.Document.Version);
             }
 
             await PersistPreferencesAsync();
+            if (FileWriteInProgress || proposals.Except(reviewedDrafts).Any() || openTabs.Any(tab => tab.IsDirty &&
+                (!reviewedTabs.TryGetValue(tab, out var reviewedVersion) || reviewedVersion.CompareAge(tab.Document.Version) != 0)))
+            {
+                Status("Files or drafts changed while closing. Review the latest changes and close again.");
+                return;
+            }
             confirmedClose = true;
             Close();
         }
         catch (Exception exception) { ShowError(exception.Message); }
         finally { checkingClose = false; }
     }
+
+    private bool FileWriteInProgress => saving.Count > 0 || openTabs.Any(tab => tab.IsSaving) ||
+        agentApplying || gitWorktreeUpdating;
 
     private Task<string?> UnsavedAsync(EditorTab tab) => Dialogs.ChooseAsync(this, "Save changes?",
         $"Changes to {tab.Title} are unsaved.", "Save", "Discard", "Cancel");
@@ -292,6 +304,7 @@ public partial class MainWindow : Window
             new("New File", Action: Immediate(NewFile), Shortcut: $"{PrimaryLabel}N"),
             new("Open Recent Workspace", Action: OpenRecentAsync),
             new("Save All Files", Action: SaveAllAsync),
+            new("Reload from Disk", Action: ReloadActiveAsync),
             new("Change File Language", Action: ChooseLanguageAsync),
             new("Format Document", Action: FormatDocumentAsync, Shortcut: "Shift+Alt+F"),
             new("Toggle Markdown Preview", Action: Immediate(ToggleMarkdownPreview), Shortcut: $"{PrimaryLabel}Shift+V"),

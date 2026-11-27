@@ -25,13 +25,13 @@ public sealed class GitRepository
         var result = await RunAsync(folder, 8192, cancellationToken, "rev-parse", "--show-toplevel").ConfigureAwait(false);
         if (result.ExitCode != 0 && result.Error.Contains("not a git repository", StringComparison.OrdinalIgnoreCase))
             return null;
-        return new(Path.GetFullPath(RequireSuccess(result).TrimEnd('\r', '\n')));
+        return new(PathIdentity.Resolve(RequireSuccess(result).TrimEnd('\r', '\n')));
     }
 
     public static async Task<GitRepository> InitAsync(string folder, CancellationToken cancellationToken)
     {
         RequireSuccess(await RunAsync(folder, 8192, cancellationToken, "init", "--initial-branch=main").ConfigureAwait(false));
-        return new(Path.GetFullPath(folder));
+        return new(PathIdentity.Resolve(folder));
     }
 
     public static async Task CloneAsync(string address, string destination, CancellationToken cancellationToken)

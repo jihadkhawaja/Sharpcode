@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Avalonia;
 using Avalonia.Controls;
@@ -30,7 +31,7 @@ public static class TestAppBuilder
         .UseHeadless(new AvaloniaHeadlessPlatformOptions()).WithInterFont();
 }
 
-public sealed class WorkbenchTests
+public sealed partial class WorkbenchTests
 {
     [AvaloniaFact]
     public async Task RightClickOpensEditorActionsAndPreservesTheSelection()
@@ -125,6 +126,61 @@ public sealed class WorkbenchTests
         await UntilAsync(() => window.FindControl<TextEditor>("Editor")!.Text == "// Workspace fixture", token);
         window.Close();
         await UntilAsync(() => !window.IsVisible, token);
+    }
+
+    [AvaloniaFact]
+    public async Task ExplorerCreatesAFileInANewFolderAndRejectsAnExistingName()
+    {
+        using var data = new TestDirectory();
+        using var project = new TestDirectory();
+        using var settings = new SettingsOverride(Environment.GetEnvironmentVariable("SHARPCODE_DATA_DIR"));
+        Environment.SetEnvironmentVariable("SHARPCODE_DATA_DIR", data.Path);
+        var token = TestContext.Current.CancellationToken;
+        var window = new MainWindow(project.Path);
+        window.Show();
+        try
+        {
+            var add = window.FindControl<Button>("ExplorerAddButton")!;
+            await UntilAsync(() => add.IsVisible && window.FindControl<TextBlock>("ExplorerMessage")!.Text ==
+                "This folder has no files to display.", token);
+            var menu = Assert.IsType<MenuFlyout>(add.Flyout);
+            var newFolder = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "New Folder…"));
+            newFolder.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            await EnterNameAsync("src");
+
+            var tree = window.FindControl<TreeView>("FileTree")!;
+            await UntilAsync(() => tree.Items.OfType<TreeViewItem>().Any(), token);
+            var folder = Assert.Single(tree.Items.OfType<TreeViewItem>());
+            var newFile = folder.ContextMenu!.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "New File…"));
+            newFile.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            await EnterNameAsync("sample.cs");
+
+            var file = Path.Combine(project.Path, "src", "sample.cs");
+            var editor = window.FindControl<TextEditor>("Editor")!;
+            await UntilAsync(() => editor.IsEffectivelyVisible && File.Exists(file), token);
+            Assert.Equal("", await File.ReadAllTextAsync(file, token));
+
+            var occupied = Path.Combine(project.Path, "occupied");
+            await File.WriteAllTextAsync(occupied, "preserve this file", token);
+            newFolder.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            await EnterNameAsync("occupied");
+            await UntilAsync(() => window.FindControl<Border>("ErrorBanner")!.IsVisible, token);
+            Assert.Equal("preserve this file", await File.ReadAllTextAsync(occupied, token));
+        }
+        finally
+        {
+            window.Close();
+            await UntilAsync(() => !window.IsVisible, token);
+        }
+
+        async Task EnterNameAsync(string name)
+        {
+            await UntilAsync(() => window.OwnedWindows.Any(dialog => dialog.IsVisible), token);
+            var dialog = window.OwnedWindows.Single(dialog => dialog.IsVisible);
+            dialog.GetVisualDescendants().OfType<TextBox>().Single().Text = name;
+            var submit = dialog.GetVisualDescendants().OfType<Button>().Single(button => Equals(button.Content, "Continue"));
+            submit.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        }
     }
 
     [AvaloniaFact]
@@ -264,7 +320,14 @@ public sealed class WorkbenchTests
         await repo.StageAsync(null, token);
         await repo.CommitAsync("First commit", token);
 
-        var window = new MainWindow(file);
+        var launchFile = file;
+        if (!OperatingSystem.IsWindows())
+        {
+            var alias = Path.Combine(fixture.Path, "work-alias");
+            Directory.CreateSymbolicLink(alias, "work");
+            launchFile = Path.Combine(alias, Path.GetFileName(file));
+        }
+        var window = new MainWindow(launchFile);
         window.Show();
         Press(window, Key.G, KeyModifiers.Control | KeyModifiers.Shift);
         var editor = window.FindControl<TextEditor>("Editor")!;
@@ -493,6 +556,8 @@ public sealed class WorkbenchTests
         Assert.Contains("HTTP 400", notice.Text);
         Assert.Equal("Test provider failure", prompt.Text);
 
+        var replacementEncoding = new UnicodeEncoding(bigEndian: true, byteOrderMark: true, throwOnInvalidBytes: true);
+        await File.WriteAllTextAsync(path, "hello\n", replacementEncoding, token);
         mode.SelectedIndex = 1;
         prompt.Text = "Update the greeting.";
         window.FindControl<Button>("SendButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -509,6 +574,12 @@ public sealed class WorkbenchTests
         apply.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         await UntilAsync(() => drafts.Items.Count == 0 && editor.Text == "welcome\n", token);
         Assert.Equal("welcome\n", await File.ReadAllTextAsync(path, token));
+        editor.Text = "welcome back\n";
+        Press(window, Key.S, OperatingSystem.IsMacOS() ? KeyModifiers.Meta : KeyModifiers.Control);
+        await UntilAsync(() => window.FindControl<TextBlock>("StatusText")!.Text == "Saved greeting.txt", token);
+        var saved = await TextFiles.ReadAsync(path, TextFiles.EditorLimit, token);
+        Assert.Equal("welcome back\n", saved.Text);
+        Assert.Equal(replacementEncoding.GetPreamble(), saved.Encoding.GetPreamble());
         window.Close();
         await UntilAsync(() => !window.IsVisible, token);
     }

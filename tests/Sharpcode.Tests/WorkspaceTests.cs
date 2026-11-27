@@ -32,6 +32,18 @@ public sealed class WorkspaceTests : IDisposable
     }
 
     [Fact]
+    public async Task EmptyGitIndexStaysEmptyWhenAllFilesAreIgnored()
+    {
+        var repository = await GitRepository.InitAsync(folder.FullName, Token);
+        await File.WriteAllTextAsync(Path.Combine(repository.Root, ".git", "info", "exclude"), "ignored.txt\n", Token);
+        await File.WriteAllTextAsync(Path.Combine(repository.Root, "ignored.txt"), "ignored token", Token);
+        var workspace = new Workspace(folder.FullName);
+
+        Assert.Empty(await workspace.FilesAsync(Token));
+        Assert.Empty(await workspace.SearchAsync("ignored token", 10, forAgent: true, Token));
+    }
+
+    [Fact]
     public async Task WorkspaceSearchReportsUnicodeCharacterColumnsAndKeepsCredentialsFromAgent()
     {
         await File.WriteAllTextAsync(Path.Combine(folder.FullName, ".env"), "answer=47", Token);

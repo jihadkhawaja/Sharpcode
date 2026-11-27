@@ -1,6 +1,10 @@
 name: Desktop
 
 on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
   release:
     types: [published]
 
@@ -11,13 +15,14 @@ jobs:
   build:
     name: ${{ matrix.rid }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             rid: win-x64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             rid: linux-x64
           - os: macos-latest
             rid: osx-arm64
@@ -33,12 +38,75 @@ jobs:
         with:
           python-version: '3.13'
       - run: dotnet build Sharpcode.slnx --configuration Release
-      - run: dotnet test Sharpcode.slnx --configuration Release --no-build
+      - run: dotnet test Sharpcode.slnx --configuration Release --no-build --logger trx --results-directory artifacts/test-results
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: Test-results-${{ matrix.rid }}
+          path: artifacts/test-results/*.trx
+          if-no-files-found: ignore
+          overwrite: true
       - run: dotnet publish src/Sharpcode --configuration Release --runtime ${{ matrix.rid }} --self-contained true --output artifacts/publish/Sharpcode
       - name: Archive desktop build
         run: python packaging/archive.py ${{ matrix.rid }} artifacts/publish/Sharpcode artifacts
+      - name: Smoke test packaged Windows startup
+        if: runner.os == 'Windows'
+        run: python packaging/smoke.py artifacts/Sharpcode-win-x64.zip
+      - name: Smoke test packaged Linux startup
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v xauth >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends xauth
+          fi
+          xvfb-run -a python packaging/smoke.py artifacts/Sharpcode-linux-x64.tar.gz
+      - name: Smoke test packaged macOS startup
+        if: runner.os == 'macOS'
+        run: python packaging/smoke.py artifacts/Sharpcode-osx-arm64.tar.gz
       - uses: actions/upload-artifact@v7
         with:
           name: Sharpcode-${{ matrix.rid }}
           path: artifacts/Sharpcode-${{ matrix.rid }}.*
           if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+
+  release-assets:
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency: release-assets-${{ github.ref }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: Sharpcode-*
+          path: artifacts
+          merge-multiple: true
+      - name: Attach tested desktop packages and checksums
+        working-directory: artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          packages=(Sharpcode-win-x64.zip Sharpcode-linux-x64.tar.gz Sharpcode-osx-arm64.tar.gz)
+          sha256sum "${packages[@]}" > SHA256SUMS
+          assets=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets")
+          pending=()
+          for package in "${packages[@]}" SHA256SUMS; do
+            digest=$(sha256sum "$package")
+            existing=$(jq -r --arg name "$package" '.[][] | select(.name == $name) | (.digest // "unavailable")' <<< "$assets")
+            if [[ -z "$existing" ]]; then
+              pending+=("$package")
+            elif [[ "$existing" != "sha256:${digest%% *}" ]]; then
+              printf 'Release already contains a different asset named %s\n' "$package" >&2
+              exit 1
+            fi
+          done
+          if ((${#pending[@]})); then
+            gh release upload --repo "$GITHUB_REPOSITORY" -- "$RELEASE_TAG" "${pending[@]}"
+          fi

@@ -437,9 +437,9 @@ public partial class MainWindow
             }
             if (decision != "Apply File")
                 return;
-            var path = current.Resolve(change.RelativePath, forAgent: true);
+            var path = PathIdentity.Resolve(current.Resolve(change.RelativePath, forAgent: true), followFinalLink: false);
             var tab = TabFor(path);
-            if (tab is { IsDirty: true } or { IsSaving: true })
+            if (opening.Contains(path) || saving.Contains(path) || tab is { IsDirty: true } or { IsSaving: true })
                 throw new IOException("Save or close the editor before applying this draft.");
 
             applyingPath = path;
@@ -449,7 +449,9 @@ public partial class MainWindow
             if (tab is not null && !tab.IsDirty)
             {
                 tab.Document.Replace(0, tab.Document.TextLength, change.Text);
-                tab.Saved(path, version, isCurrentVersion: true);
+                tab.Saved(path, version, isCurrentVersion: true, encoding: change.Original.Encoding);
+                if (tab == activeTab)
+                    UpdateEditorStatus();
             }
             proposals.Remove(change);
             Status($"Applied · {change.RelativePath}");

@@ -1,3 +1,4 @@
+using System.IO.Pipelines;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -95,6 +96,67 @@ public sealed class AgentTests : IDisposable
         using var http = new HttpClient(handler);
         await Assert.ThrowsAsync<IOException>(() => new ModelClient(http).CompleteAsync(
             new(ModelProvider.LMStudio, "fixture"), null, "", [new("user", "hello")], [], null, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task StalledProviderBodyTimesOutAfterHeaders()
+    {
+        var pipe = new Pipe();
+        using var handler = new FakeProvider((_, _) => Task.FromResult(StreamResponse(pipe.Reader.AsStream())));
+        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(1) };
+        try
+        {
+            var exception = await Assert.ThrowsAsync<TimeoutException>(() => new ModelClient(http).CompleteAsync(
+                new(ModelProvider.LMStudio, "fixture"), null, "", [new("user", "hello")], [], null,
+                TestContext.Current.CancellationToken));
+            Assert.Contains("stopped sending", exception.Message);
+        }
+        finally { await pipe.Writer.CompleteAsync(); }
+    }
+
+    [Fact]
+    public async Task StreamHandlesSplitUtf8AndFinishesEvenWhenConnectionStaysOpen()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var pipe = new Pipe();
+        using var handler = new FakeProvider((_, _) => Task.FromResult(StreamResponse(pipe.Reader.AsStream())));
+        using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) };
+        try
+        {
+            var completion = new ModelClient(http).CompleteAsync(
+                new(ModelProvider.LMStudio, "fixture"), null, "", [new("user", "hello")], [], null, token);
+            await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes(
+                "\uFEFFdata: {\"choices\":[{\"delta\":{\"content\":\""), token);
+            var emoji = Encoding.UTF8.GetBytes("🌱");
+            await pipe.Writer.WriteAsync(emoji.AsMemory(0, 2), token);
+            await pipe.Writer.WriteAsync(emoji.AsMemory(2), token);
+            await pipe.Writer.WriteAsync(Encoding.UTF8.GetBytes("\"},\"finish_reason\":\"stop\"}]}\r\n\r\n"), token);
+
+            Assert.Equal("🌱", (await completion).Text);
+        }
+        finally { await pipe.Writer.CompleteAsync(); }
+    }
+
+    [Fact]
+    public async Task NonStreamingProviderCannotReturnAnOversizedCompletion()
+    {
+        var payload = JsonSerializer.Serialize(new { choices = new[] { new { message = new { content = new string('a', 512_001) } } } });
+        using var handler = new FakeProvider((_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        }));
+        using var http = new HttpClient(handler);
+        var exception = await Assert.ThrowsAsync<IOException>(() => new ModelClient(http).CompleteAsync(
+            new(ModelProvider.LMStudio, "fixture"), null, "", [new("user", "hello")], [], _ => Assert.Fail("Output was published"),
+            TestContext.Current.CancellationToken));
+        Assert.Contains("output limit", exception.Message);
+    }
+
+    private static HttpResponseMessage StreamResponse(Stream stream)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(stream) };
+        response.Content.Headers.ContentType = new("text/event-stream");
+        return response;
     }
 
     private static Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> VerifyAndReply(

@@ -351,10 +351,10 @@ public partial class MainWindow
     private Task ChangeGitWorktreeAsync(GitRepository repository, string progress, string success,
         Func<CancellationToken, Task> action)
     {
-        if (agentApplying || openTabs.Any(tab => (tab.IsDirty || tab.IsSaving) && tab.Path is not null &&
-                IsUnderRepository(repository, tab.Path)))
+        if (agentApplying || saving.Any(IsRepositoryPath) || opening.Any(IsRepositoryPath) ||
+            openTabs.Any(tab => (tab.IsDirty || tab.IsSaving) && tab.Path is { } path && IsRepositoryPath(path)))
         {
-            ShowError("Finish any active file writes and save unsaved files before changing the working tree.");
+            ShowError("Finish active file operations and save unsaved files before changing the working tree.");
             return Task.CompletedTask;
         }
 
@@ -376,6 +376,8 @@ public partial class MainWindow
                 UpdateEditorReadOnly();
             }
         });
+
+        bool IsRepositoryPath(string path) => IsUnderRepository(repository, path);
     }
 
     private static bool IsUnderRepository(GitRepository repository, string path)

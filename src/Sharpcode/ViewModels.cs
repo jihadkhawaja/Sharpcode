@@ -39,13 +39,16 @@ public sealed class EditorTab : INotifyPropertyChanged
     internal bool ShowMarkdownPreview { get; set; }
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public void Saved(string path, byte[] version, bool isCurrentVersion)
+    public void Saved(string path, byte[] version, bool isCurrentVersion, Encoding? encoding = null)
     {
         Path = path;
         Title = System.IO.Path.GetFileName(path);
         Version = version;
+        Encoding = encoding ?? Encoding;
         if (isCurrentVersion)
             Document.UndoStack.MarkAsOriginalFile();
+        else
+            Document.UndoStack.DiscardOriginalFileMarker();
         RefreshLabel();
         PropertyChanged?.Invoke(this, new(nameof(Title)));
         PropertyChanged?.Invoke(this, new(nameof(DisplayPath)));

@@ -109,6 +109,35 @@ public sealed class GitRepositoryTests : IDisposable
         Assert.Contains("rename to src/new name.txt", diff);
     }
 
+    [Fact]
+    public async Task RepositoryAndWorkspaceAgreeOnPathsThroughAnAliasedParentDirectory()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "The fixture requires permission to create symbolic links.");
+        var target = Directory.CreateDirectory(Path.Combine(root.FullName, "target"));
+        var alias = Path.Combine(root.FullName, "alias");
+        Directory.CreateSymbolicLink(alias, target.Name);
+        var work = Directory.CreateDirectory(Path.Combine(alias, "work")).FullName;
+        var nested = Directory.CreateDirectory(Path.Combine(work, "src")).FullName;
+        var file = Path.Combine(nested, "notes.txt");
+        await File.WriteAllTextAsync(file, "Noted\n", Token);
+
+        var initialized = await GitRepository.InitAsync(work, Token);
+        var discovered = Assert.IsType<GitRepository>(await GitRepository.DiscoverAsync(nested, Token));
+        Assert.Equal(initialized.Root, discovered.Root);
+        var physical = PathIdentity.Resolve(file);
+        Assert.Equal(Path.Combine(initialized.Root, "src", "notes.txt"), physical);
+
+        var workspace = new Workspace(work);
+        Assert.Equal(work, workspace.Root);
+        Assert.Equal("src/notes.txt", workspace.Relative(physical));
+        Assert.Equal(file, workspace.Resolve(workspace.Relative(physical)));
+        var linkedFile = Path.Combine(nested, "linked.txt");
+        File.CreateSymbolicLink(linkedFile, "notes.txt");
+        Assert.Equal(physical, PathIdentity.Resolve(linkedFile));
+        Assert.Equal(Path.Combine(initialized.Root, "src", "linked.txt"), PathIdentity.Resolve(linkedFile, followFinalLink: false));
+        Assert.Throws<IOException>(() => workspace.Resolve("src/linked.txt", forAgent: true));
+    }
+
     private async Task<GitRepository> CreateRepositoryAsync(string name)
     {
         var path = Directory.CreateDirectory(Path.Combine(root.FullName, name)).FullName;

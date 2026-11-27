@@ -32,12 +32,27 @@ public sealed class Workspace
         Root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
         if (!Directory.Exists(Root))
             throw new DirectoryNotFoundException(Root);
+        PhysicalRoot = PathIdentity.Resolve(Root);
     }
 
     public string Root { get; }
+    public string PhysicalRoot { get; }
     public string Name => new DirectoryInfo(Root).Name;
 
-    public string Relative(string path) => Path.GetRelativePath(Root, path).Replace(Path.DirectorySeparatorChar, '/');
+    public string Relative(string path)
+    {
+        var relative = Path.GetRelativePath(Root, path);
+        if (!PathComparer.Equals(Root, PhysicalRoot) && !IsWithinRoot(relative))
+        {
+            var physicalRelative = Path.GetRelativePath(PhysicalRoot, path);
+            if (IsWithinRoot(physicalRelative))
+                relative = physicalRelative;
+        }
+        return relative.Replace(Path.DirectorySeparatorChar, '/');
+    }
+
+    private static bool IsWithinRoot(string relative) => !Path.IsPathRooted(relative) && relative != ".." &&
+        !relative.StartsWith($"..{Path.DirectorySeparatorChar}", StringComparison.Ordinal);
 
     public void InvalidateFileIndex() => Interlocked.Increment(ref fileRevision);
 
@@ -95,7 +110,7 @@ public sealed class Workspace
                 return index.Paths;
 
             var gitPaths = await GitFilesAsync(cancellationToken).ConfigureAwait(false);
-            var paths = gitPaths is { Count: > 0 } ? gitPaths : WalkFiles(cancellationToken);
+            var paths = gitPaths ?? WalkFiles(cancellationToken);
             index = (paths.Distinct(PathComparer).Order(StringComparer.OrdinalIgnoreCase).ToArray(), DateTimeOffset.UtcNow, revision);
             return index.Paths;
         }

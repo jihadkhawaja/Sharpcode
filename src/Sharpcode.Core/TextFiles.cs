@@ -12,6 +12,8 @@ public static class TextFiles
 {
     public const int EditorLimit = 64 * 1024 * 1024;
     public const int AgentLimit = 1024 * 1024;
+    private static readonly SemaphoreSlim[] WriteGates = Enumerable.Range(0, 64)
+        .Select(_ => new SemaphoreSlim(1, 1)).ToArray();
 
     public static async Task<FileSnapshot> ReadAsync(string path, int limit, CancellationToken cancellationToken)
     {
@@ -36,8 +38,10 @@ public static class TextFiles
     public static async Task<byte[]> WriteAsync(string path, string text, Encoding encoding, byte[] expectedVersion,
         CancellationToken cancellationToken)
     {
+        path = PathIdentity.Resolve(path, followFinalLink: false);
         var folder = Path.GetDirectoryName(path)!;
         var temporary = Path.Combine(folder, $".sharpcode-{Guid.NewGuid():N}.tmp");
+        var removeTemporary = false;
         try
         {
             byte[] version;
@@ -45,6 +49,7 @@ public static class TextFiles
                 64 * 1024, FileOptions.Asynchronous))
             using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
             {
+                removeTemporary = true;
                 var preamble = encoding.GetPreamble();
                 var buffer = new byte[encoding.GetMaxByteCount(16 * 1024)];
                 await stream.WriteAsync(preamble, cancellationToken).ConfigureAwait(false);
@@ -61,25 +66,35 @@ public static class TextFiles
                 version = hash.GetHashAndReset();
             }
 
-            if (expectedVersion.Length > 0)
+            var gate = WriteGates[Math.Abs(Workspace.PathComparer.GetHashCode(path) % WriteGates.Length)];
+            await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
             {
-                await using var original = new FileStream(path, FileMode.Open, FileAccess.Read,
-                    FileShare.ReadWrite | FileShare.Delete, 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-                var actual = await SHA256.HashDataAsync(original, cancellationToken).ConfigureAwait(false);
-                if (!actual.AsSpan().SequenceEqual(expectedVersion))
-                    throw new IOException("The file changed on disk. Reopen it before saving.");
+                if (expectedVersion.Length > 0)
+                {
+                    if (File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint))
+                        throw new IOException("Saving requires a regular file.");
+                    await using var original = new FileStream(path, FileMode.Open, FileAccess.Read,
+                        FileShare.Read | FileShare.Delete, 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                    var actual = await SHA256.HashDataAsync(original, cancellationToken).ConfigureAwait(false);
+                    if (!actual.AsSpan().SequenceEqual(expectedVersion))
+                        throw new IOException("The file changed on disk. Use Save As to keep your edits in a different file.");
 
-                if (!OperatingSystem.IsWindows())
-                    File.SetUnixFileMode(temporary, File.GetUnixFileMode(path));
+                    if (!OperatingSystem.IsWindows())
+                        File.SetUnixFileMode(temporary, File.GetUnixFileMode(path));
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                File.Move(temporary, path, overwrite: expectedVersion.Length > 0);
+                removeTemporary = false;
+                return version;
             }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            File.Move(temporary, path, overwrite: expectedVersion.Length > 0);
-            return version;
+            finally { gate.Release(); }
         }
         finally
         {
-            File.Delete(temporary);
+            if (removeTemporary)
+                File.Delete(temporary);
         }
     }
 

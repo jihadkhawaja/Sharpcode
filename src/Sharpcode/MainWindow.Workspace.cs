@@ -135,6 +135,7 @@ public partial class MainWindow
             ToolTip.SetTip(WorkspaceButton, next.Root);
             ExplorerTitle.Text = next.Name;
             ToolTip.SetTip(ExplorerTitle, next.Root);
+            ExplorerAddButton.IsVisible = true;
             RefreshExplorerButton.IsVisible = true;
             ExplorerOpenFolder.IsVisible = false;
             FileTree.Items.Clear();
@@ -234,6 +235,7 @@ public partial class MainWindow
             ToolTip.SetTip(item, entry.Path);
             if (entry.IsDirectory)
             {
+                item.ContextMenu = WorkspaceFolderMenu(current, entry.Path);
                 item.FontWeight = Avalonia.Media.FontWeight.Medium;
                 var loadingIndicator = new TreeViewItem { Header = "Loading…" };
                 item.Items.Add(loadingIndicator);
@@ -476,6 +478,73 @@ public partial class MainWindow
             while (output.Count > 96)
                 output.TryDequeue(out _);
         }
+    }
+
+    private ContextMenu WorkspaceFolderMenu(Workspace current, string folder)
+    {
+        var file = new MenuItem { Header = "New File…" };
+        var directory = new MenuItem { Header = "New Folder…" };
+        file.Click += async (_, _) => await TryAsync(() => CreateWorkspaceEntryAsync(current, folder, isDirectory: false));
+        directory.Click += async (_, _) => await TryAsync(() => CreateWorkspaceEntryAsync(current, folder, isDirectory: true));
+        return new ContextMenu { Items = { file, directory } };
+    }
+
+    private async Task CreateWorkspaceEntryAsync(Workspace current, string folder, bool isDirectory)
+    {
+        if (workspace != current || switchingWorkspace || gitWorktreeUpdating)
+            return;
+
+        var kind = isDirectory ? "Folder" : "File";
+        var name = await Dialogs.InputAsync(this, $"New {kind}", $"Name in {(folder.Length == 0 ? current.Name : folder)}");
+        if (name is null || workspace != current || switchingWorkspace || gitWorktreeUpdating)
+            return;
+        if (string.IsNullOrWhiteSpace(name) || name.Contains('/') || name.Contains('\\'))
+            throw new IOException("Enter a single file or folder name.");
+
+        var relative = folder.Length == 0 ? name : $"{folder}/{name}";
+        var path = await Task.Run(() => PathIdentity.Resolve(current.Resolve(relative), followFinalLink: false), lifetime.Token);
+        if (workspace != current || switchingWorkspace || gitWorktreeUpdating)
+            return;
+        if (TabFor(path) is not null || opening.Contains(path) ||
+            Workspace.PathComparer.Equals(applyingPath, path) || !saving.Add(path))
+            throw new IOException("This path is already open or being written.");
+
+        try
+        {
+            await Task.Run(async () =>
+            {
+                var parent = folder.Length == 0 ? current.Root : current.Resolve(folder);
+                if (!Directory.Exists(parent))
+                    throw new DirectoryNotFoundException("The parent folder no longer exists.");
+                if (Path.Exists(path))
+                    throw new IOException("A file or folder with that name already exists.");
+                if (isDirectory)
+                    Directory.CreateDirectory(path);
+                else
+                    await TextFiles.WriteAsync(path, "", FileSnapshot.New.Encoding, FileSnapshot.New.Version, lifetime.Token);
+            }, lifetime.Token);
+        }
+        finally { saving.Remove(path); }
+        if (workspace != current)
+            return;
+
+        if (!isDirectory)
+            await OpenDocumentAsync(path);
+        Status($"Created {relative}");
+        ScheduleGitRefresh();
+        await RefreshExplorerAsync();
+    }
+
+    private async void OnCreateWorkspaceFile(object? sender, RoutedEventArgs e)
+    {
+        if (workspace is { } current)
+            await TryAsync(() => CreateWorkspaceEntryAsync(current, "", isDirectory: false));
+    }
+
+    private async void OnCreateWorkspaceFolder(object? sender, RoutedEventArgs e)
+    {
+        if (workspace is { } current)
+            await TryAsync(() => CreateWorkspaceEntryAsync(current, "", isDirectory: true));
     }
 
     private async void OnOpenFolder(object? sender, RoutedEventArgs e) => await TryAsync(OpenFolderAsync);

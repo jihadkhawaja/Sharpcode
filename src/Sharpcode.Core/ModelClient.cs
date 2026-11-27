@@ -34,15 +34,28 @@ public sealed record ChatMessage(string Role, string Text, IReadOnlyList<ToolCal
 
 public sealed class ModelClient(HttpClient http)
 {
+    private const int MaxResponseBytes = 8 * 1024 * 1024;
+    private const int MaxEventCharacters = 2_000_000;
+    private const int MaxOutputCharacters = 512_000;
+    private const int MaxToolCalls = 128;
+
     public async Task<IReadOnlyList<string>> ModelsAsync(ModelSettings settings, string? key, CancellationToken cancellationToken)
     {
         using var request = Request(HttpMethod.Get, settings, key, "models");
-        using var response = await http.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        await CheckAsync(response, cancellationToken).ConfigureAwait(false);
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
-        return json.RootElement.GetProperty("data").EnumerateArray()
-            .Select(model => String(model, "id")).Where(id => id.Length > 0).Order().ToArray();
+        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
+        using var deadline = BodyDeadline(cancellationToken);
+        try
+        {
+            await CheckAsync(response, deadline.Token).ConfigureAwait(false);
+            using var json = await ReadJsonAsync(response.Content, deadline.Token).ConfigureAwait(false);
+            return json.RootElement.GetProperty("data").EnumerateArray()
+                .Select(model => String(model, "id")).Where(id => id.Length > 0).Order().ToArray();
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            throw new TimeoutException("The provider stopped sending the model list.");
+        }
     }
 
     public async Task<ChatMessage> CompleteAsync(ModelSettings settings, string? key, string system,
@@ -60,30 +73,59 @@ public sealed class ModelClient(HttpClient http)
         request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
-        await CheckAsync(response, cancellationToken).ConfigureAwait(false);
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var deadline = BodyDeadline(cancellationToken);
+        try
+        {
+            await CheckAsync(response, deadline.Token).ConfigureAwait(false);
+            return await ReadCompletionAsync(response, claude, onText, deadline).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            throw new TimeoutException("The provider stopped sending the response.");
+        }
+    }
+
+    private CancellationTokenSource BodyDeadline(CancellationToken cancellationToken)
+    {
+        var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(http.Timeout);
+        return deadline;
+    }
+
+    private static async Task<JsonDocument> ReadJsonAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+        await content.LoadIntoBufferAsync(MaxResponseBytes, cancellationToken).ConfigureAwait(false);
+        await using var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<ChatMessage> ReadCompletionAsync(HttpResponseMessage response, bool claude, Action<string>? onText,
+        CancellationTokenSource deadline)
+    {
         if (response.Content.Headers.ContentType?.MediaType == "application/json")
         {
-            using var json = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken).ConfigureAwait(false);
+            using var json = await ReadJsonAsync(response.Content, deadline.Token).ConfigureAwait(false);
             var result = ReadNonStreaming(json.RootElement, claude);
+            CheckOutputSize(result.Text.Length, result.Calls?.Count ?? 0,
+                result.Calls?.Sum(call => (long)call.Id.Length + call.Name.Length + call.Arguments.Length) ?? 0);
             if (result.Text.Length > 0)
                 onText?.Invoke(result.Text);
             return result;
         }
 
-        using var reader = new StreamReader(stream);
+        await using var stream = await response.Content.ReadAsStreamAsync(deadline.Token).ConfigureAwait(false);
         var calls = new SortedDictionary<int, CallBuilder>();
         var text = new StringBuilder();
         var eventBody = new StringBuilder();
         var finished = false;
-        while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
+        await foreach (var line in ReadStreamLinesAsync(stream, deadline).ConfigureAwait(false))
         {
             if (line.StartsWith("data:", StringComparison.Ordinal))
             {
                 if (eventBody.Length > 0)
                     eventBody.Append('\n');
                 eventBody.Append(line.AsSpan(5).TrimStart());
-                if (eventBody.Length > 2_000_000)
+                if (eventBody.Length > MaxEventCharacters)
                     throw new IOException("The provider sent an oversized stream event.");
                 continue;
             }
@@ -108,17 +150,67 @@ public sealed class ModelClient(HttpClient http)
                 : item.TryGetProperty("choices", out var choices) && choices.GetArrayLength() > 0 &&
                   choices[0].TryGetProperty("finish_reason", out var reason) && reason.ValueKind == JsonValueKind.String;
             if (delta.Length > 0)
-            {
                 text.Append(delta);
+            CheckOutputSize(text.Length, calls.Count, calls.Values.Sum(call => call.Length));
+            if (delta.Length > 0)
                 onText?.Invoke(delta);
-            }
-            if (text.Length + calls.Values.Sum(call => call.Arguments.Length) > 512_000)
-                throw new IOException("The provider response exceeded Sharpcode's output limit.");
+            if (finished)
+                break;
         }
 
         if (!finished)
             throw new IOException("The provider stream ended before the response was complete.");
         return new("assistant", text.ToString(), calls.Values.Select(call => call.Build()).ToArray());
+    }
+
+    private async IAsyncEnumerable<string> ReadStreamLinesAsync(Stream stream, CancellationTokenSource deadline)
+    {
+        var buffer = new byte[4096];
+        var characters = new char[Encoding.UTF8.GetMaxCharCount(buffer.Length)];
+        var decoder = Encoding.UTF8.GetDecoder();
+        var line = new StringBuilder();
+        var afterCarriageReturn = false;
+        var atStart = true;
+        var receivedBytes = 0;
+        while (true)
+        {
+            deadline.CancelAfter(http.Timeout);
+            var count = await stream.ReadAsync(buffer.AsMemory(), deadline.Token).ConfigureAwait(false);
+            if (count == 0)
+                break;
+            receivedBytes += count;
+            if (receivedBytes > MaxResponseBytes)
+                throw new IOException("The provider stream exceeded Sharpcode's response limit.");
+
+            var decoded = decoder.GetChars(buffer.AsSpan(0, count), characters, flush: false);
+            for (var offset = 0; offset < decoded; offset++)
+            {
+                var character = characters[offset];
+                var isByteOrderMark = atStart && character == '\uFEFF';
+                atStart = false;
+                if (isByteOrderMark)
+                    continue;
+                var skipLineFeed = afterCarriageReturn && character == '\n';
+                afterCarriageReturn = character == '\r';
+                if (skipLineFeed)
+                    continue;
+                if (character is '\r' or '\n')
+                {
+                    yield return line.ToString();
+                    line.Clear();
+                    continue;
+                }
+                if (line.Length == MaxEventCharacters)
+                    throw new IOException("The provider sent an oversized stream line.");
+                line.Append(character);
+            }
+        }
+    }
+
+    private static void CheckOutputSize(int textLength, int toolCount, long toolLength)
+    {
+        if (textLength + toolLength > MaxOutputCharacters || toolCount > MaxToolCalls)
+            throw new IOException("The provider response exceeded Sharpcode's output limit.");
     }
 
     private static HttpRequestMessage Request(HttpMethod method, ModelSettings settings, string? sessionKey, string route)
@@ -254,6 +346,8 @@ public sealed class ModelClient(HttpClient http)
                 if (String(content, "type") == "tool_use")
                 {
                     var call = new CallBuilder { Id = String(content, "id") };
+                    if (content.TryGetProperty("input", out var input) && input.ValueKind == JsonValueKind.Object)
+                        call.InitialArguments = input.GetRawText();
                     call.Name.Append(String(content, "name"));
                     calls[item.GetProperty("index").GetInt32()] = call;
                 }
@@ -292,9 +386,11 @@ public sealed class ModelClient(HttpClient http)
     private sealed class CallBuilder
     {
         public string Id { get; set; } = "";
+        public string InitialArguments { get; set; } = "{}";
         public StringBuilder Name { get; } = new();
         public StringBuilder Arguments { get; } = new();
+        public long Length => (long)Id.Length + Name.Length + Arguments.Length + InitialArguments.Length;
         public ToolCall Build() => new(Id.Length == 0 ? $"call_{Guid.NewGuid():N}" : Id, Name.ToString(),
-            Arguments.Length == 0 ? "{}" : Arguments.ToString());
+            Arguments.Length == 0 ? InitialArguments : Arguments.ToString());
     }
 }

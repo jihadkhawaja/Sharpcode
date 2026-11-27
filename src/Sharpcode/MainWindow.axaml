@@ -61,6 +61,7 @@
           <MenuItem x:Name="SaveMenuItem" Header="Save" Click="OnSave" />
           <MenuItem Header="Save As…" Click="OnSaveAs" />
           <MenuItem Header="Save All" Click="OnSaveAll" />
+          <MenuItem x:Name="ReloadMenuItem" Header="Reload from Disk…" Click="OnReloadFile" />
           <MenuItem Header="Close Editor" Click="OnCloseTab" />
         </MenuItem>
         <MenuItem Header="_Edit">
@@ -127,10 +128,19 @@
           </Grid>
         </Border>
         <Grid Grid.Row="1" x:Name="ExplorerPane" RowDefinitions="Auto,*">
-          <Grid ColumnDefinitions="*,Auto" Margin="14,8,8,6">
+          <Grid ColumnDefinitions="*,Auto,Auto" Margin="14,8,8,6">
             <TextBlock x:Name="ExplorerTitle" Text="Workspace files" Classes="paneTitle" VerticalAlignment="Center"
                        TextTrimming="CharacterEllipsis" />
-            <Button Grid.Column="1" x:Name="RefreshExplorerButton" Classes="quiet" Content="↻" Click="OnRefreshExplorer"
+            <Button Grid.Column="1" x:Name="ExplorerAddButton" Classes="quiet" Content="+" IsVisible="False"
+                    ToolTip.Tip="Create a file or folder" AutomationProperties.Name="Create a file or folder">
+              <Button.Flyout>
+                <MenuFlyout>
+                  <MenuItem Header="New File…" Click="OnCreateWorkspaceFile" />
+                  <MenuItem Header="New Folder…" Click="OnCreateWorkspaceFolder" />
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
+            <Button Grid.Column="2" x:Name="RefreshExplorerButton" Classes="quiet" Content="↻" Click="OnRefreshExplorer"
                     IsVisible="False" ToolTip.Tip="Refresh files"
                     AutomationProperties.Name="Refresh files" />
           </Grid>

@@ -18,6 +18,7 @@ public partial class MainWindow
 {
     private readonly ObservableCollection<EditorTab> openTabs = [];
     private readonly HashSet<string> opening = new(Workspace.PathComparer);
+    private readonly HashSet<string> saving = new(Workspace.PathComparer);
     private RegistryOptions? darkGrammars;
     private RegistryOptions? lightGrammars;
     private RegistryOptions Grammars => ActualThemeVariant == ThemeVariant.Light
@@ -65,9 +66,7 @@ public partial class MainWindow
 
     private async Task OpenDocumentAsync(string path, int? line = null, int column = 1)
     {
-        path = Path.GetFullPath(path);
-        if (new FileInfo(path).LinkTarget is not null)
-            path = File.ResolveLinkTarget(path, returnFinalTarget: true)?.FullName ?? path;
+        path = await Task.Run(() => PathIdentity.Resolve(path), lifetime.Token);
         var existing = TabFor(path);
         if (existing is not null)
         {
@@ -76,6 +75,10 @@ public partial class MainWindow
                 JumpTo(target, column);
             return;
         }
+        if (saving.Contains(path) || Workspace.PathComparer.Equals(applyingPath, path))
+            throw new IOException("The file is being written. Open it after the write finishes.");
+        if (gitWorktreeUpdating && gitRepository is { } repository && IsUnderRepository(repository, path))
+            throw new IOException("Git is updating this file's working tree. Open it after Git finishes.");
         if (!opening.Add(path))
             return;
 
@@ -199,10 +202,10 @@ public partial class MainWindow
         if (gitWorktreeUpdating || tab.IsSaving || (applyingPath is not null && Workspace.PathComparer.Equals(tab.Path, applyingPath)))
             return false;
         tab.IsSaving = true;
+        string? reservedDestination = null;
         try
         {
             var destination = tab.Path;
-            var expected = tab.Version;
             if (forcePicker || destination is null)
             {
                 var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
@@ -212,30 +215,47 @@ public partial class MainWindow
                     SuggestedStartLocation = await WorkspaceLocationAsync(),
                     ShowOverwritePrompt = true
                 });
-                destination = file?.TryGetLocalPath();
-                if (destination is null)
+                if (file?.TryGetLocalPath() is not { } localPath)
                     return false;
-                if (TabFor(destination) is { } other && other != tab)
-                    throw new IOException("That file is already open in another editor.");
-                if (!Workspace.PathComparer.Equals(destination, tab.Path))
-                    expected = File.Exists(destination)
-                        ? (await TextFiles.ReadAsync(destination, TextFiles.EditorLimit, lifetime.Token)).Version : [];
+                destination = await Task.Run(() => PathIdentity.Resolve(localPath, followFinalLink: false), lifetime.Token);
             }
 
-            if (File.Exists(destination) && File.GetAttributes(destination).HasFlag(FileAttributes.ReparsePoint))
-                throw new IOException("Save As requires a regular file.");
+            if (TabFor(destination) is { } other && other != tab)
+                throw new IOException("That file is already open in another editor.");
+            if (gitWorktreeUpdating || opening.Contains(destination) ||
+                Workspace.PathComparer.Equals(applyingPath, destination) || !saving.Add(destination))
+                throw new IOException("That file is in use. Try saving it again after the current operation finishes.");
+            reservedDestination = destination;
+
             var snapshot = tab.Document.CreateSnapshot();
-            var version = await Task.Run(() => TextFiles.WriteAsync(destination, snapshot.Text, tab.Encoding, expected, lifetime.Token), lifetime.Token);
+            var sameFile = Workspace.PathComparer.Equals(destination, tab.Path);
+            var encoding = tab.Encoding;
+            var originalVersion = tab.Version;
+            var (version, created) = await Task.Run(async () =>
+            {
+                if ((File.Exists(destination) && File.GetAttributes(destination).HasFlag(FileAttributes.ReparsePoint)) ||
+                    new FileInfo(destination).LinkTarget is not null)
+                    throw new IOException("Saving requires a regular file.");
+                var expected = sameFile ? originalVersion : File.Exists(destination)
+                    ? (await TextFiles.ReadAsync(destination, TextFiles.EditorLimit, lifetime.Token)).Version : [];
+                var written = await TextFiles.WriteAsync(destination, snapshot.Text, encoding, expected, lifetime.Token);
+                return (written, expected.Length == 0);
+            }, lifetime.Token);
             tab.Saved(destination, version, snapshot.Version.CompareAge(tab.Document.Version) == 0);
             if (tab == activeTab)
                 UpdateBreadcrumbAndSyntax(tab);
             Status($"Saved {tab.Title}");
-            if (expected.Length == 0)
+            if (created)
                 await RefreshExplorerAsync();
             ScheduleGitRefresh();
             return true;
         }
-        finally { tab.IsSaving = false; }
+        finally
+        {
+            if (reservedDestination is not null)
+                saving.Remove(reservedDestination);
+            tab.IsSaving = false;
+        }
     }
 
     private async Task SaveAllAsync()
@@ -247,16 +267,51 @@ public partial class MainWindow
         }
     }
 
+    private async Task ReloadActiveAsync()
+    {
+        if (activeTab is not { Path: { } path } tab)
+        {
+            Status("Open a saved file to reload it from disk.");
+            return;
+        }
+        if (!CanReload(tab))
+        {
+            Status("Wait for the current file write to finish.");
+            return;
+        }
+
+        var bufferVersion = tab.Document.Version;
+        var fileVersion = tab.Version;
+        if (tab.IsDirty && !await ConfirmAsync("Reload from disk?",
+            $"Reloading {tab.Title} will discard its unsaved changes.", "Reload"))
+            return;
+        var snapshot = await Task.Run(() => TextFiles.ReadAsync(path, TextFiles.EditorLimit, lifetime.Token), lifetime.Token);
+        if (!openTabs.Contains(tab) || !CanReload(tab) || !ReferenceEquals(fileVersion, tab.Version) ||
+            bufferVersion.CompareAge(tab.Document.Version) != 0)
+        {
+            Status("The editor changed while reloading. Review the latest edits and try again.");
+            return;
+        }
+        if (tab.IsDirty || !fileVersion.AsSpan().SequenceEqual(snapshot.Version))
+        {
+            tab.Reload(snapshot);
+            tab.Caret = Math.Min(tab.Caret, tab.Document.TextLength);
+            if (tab == activeTab)
+            {
+                UpdateBreadcrumbAndSyntax(tab);
+                UpdateEditorStatus();
+            }
+        }
+        Status($"Reloaded {tab.Title} from disk");
+    }
+
+    private bool CanReload(EditorTab tab) => !tab.IsSaving && !gitWorktreeUpdating &&
+        !Workspace.PathComparer.Equals(tab.Path, applyingPath);
+
     private async Task CloseTabAsync(EditorTab? tab)
     {
-        if (tab is null || tab.IsSaving || (applyingPath is not null && Workspace.PathComparer.Equals(tab.Path, applyingPath)))
+        if (tab is null || !await ConfirmTabCloseAsync(tab))
             return;
-        if (tab.IsDirty)
-        {
-            var decision = await UnsavedAsync(tab);
-            if (decision is null or "Cancel" || (decision == "Save" && !await SaveTabAsync(tab)))
-                return;
-        }
 
         var index = openTabs.IndexOf(tab);
         if (index < 0)
@@ -264,6 +319,34 @@ public partial class MainWindow
         if (tab == activeTab)
             ActivateTab(openTabs.Count == 1 ? null : openTabs[index == openTabs.Count - 1 ? index - 1 : index + 1]);
         openTabs.Remove(tab);
+    }
+
+    private async Task<bool> ConfirmTabCloseAsync(EditorTab tab)
+    {
+        if (tab.IsSaving || (applyingPath is not null && Workspace.PathComparer.Equals(tab.Path, applyingPath)))
+            return false;
+        if (!tab.IsDirty)
+            return true;
+
+        var reviewedVersion = tab.Document.Version;
+        switch (await UnsavedAsync(tab))
+        {
+            case "Discard":
+                if (reviewedVersion.CompareAge(tab.Document.Version) == 0)
+                    return true;
+                break;
+            case "Save":
+                if (!await SaveTabAsync(tab))
+                    return false;
+                if (!tab.IsDirty)
+                    return true;
+                break;
+            default:
+                return false;
+        }
+
+        Status("The editor changed while closing. Review the latest edits and close it again.");
+        return false;
     }
 
     private void CycleTabs(int direction)
@@ -375,6 +458,7 @@ public partial class MainWindow
     private async void OnSave(object? sender, RoutedEventArgs e) => await TryAsync(() => SaveActiveAsync());
     private async void OnSaveAs(object? sender, RoutedEventArgs e) => await TryAsync(() => SaveActiveAsync(true));
     private async void OnSaveAll(object? sender, RoutedEventArgs e) => await TryAsync(SaveAllAsync);
+    private async void OnReloadFile(object? sender, RoutedEventArgs e) => await TryAsync(ReloadActiveAsync);
     private async void OnCloseTab(object? sender, RoutedEventArgs e) => await TryAsync(() => CloseTabAsync(activeTab));
     private async void OnCloseSpecificTab(object? sender, RoutedEventArgs e) => await TryAsync(() => CloseTabAsync((sender as Control)?.DataContext as EditorTab));
     private async void OnTabPointerReleased(object? sender, PointerReleasedEventArgs e)

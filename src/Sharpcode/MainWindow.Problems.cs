@@ -128,10 +128,10 @@ public partial class MainWindow
             return;
         var current = workspace;
         var path = activeTab?.Path;
-        var candidates = await Task.Run(() => FindNearestProjects(path, current?.Root), lifetime.Token);
+        var candidates = await Task.Run(() => FindNearestProjects(path, current?.PhysicalRoot), lifetime.Token);
         if (candidates.Length == 0 && current is not null)
             candidates = (await current.FilesAsync(lifetime.Token)).Where(file => Path.GetExtension(file).Equals(".csproj", StringComparison.OrdinalIgnoreCase))
-                .Take(500).Select(file => Path.GetFullPath(file, current.Root)).ToArray();
+                .Take(500).Select(file => Path.GetFullPath(file, current.PhysicalRoot)).ToArray();
         var project = await PickProjectAsync(candidates, current);
         if (project is null || workspace != current || projectCheck is not null)
             return;
@@ -146,7 +146,7 @@ public partial class MainWindow
         ShowProblems(true);
         try
         {
-            var result = await CSharpDiagnostics.CheckProjectAsync(project, cancel.Token);
+            var result = await CSharpDiagnostics.CheckProjectAsync(PathIdentity.Resolve(project), cancel.Token);
             if (workspace != current || cancel.IsCancellationRequested)
                 return;
             buildProblems = result.Problems;

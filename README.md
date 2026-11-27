@@ -29,9 +29,11 @@ Git supplies the quick-open index and source-control commands. Sharpcode can bro
 - Use **File → Open Recent** or the folder name in the toolbar to switch workspaces. The start screen also shows recent folders.
 - Open **Quick Open** with Ctrl+P or ⌘P. Search by file name or path, or type `>` to run a command from the same box.
 - Click a folder row to expand or collapse it, or click a file to open it. In workspace search, use Down to browse matches or Enter to jump to the first match.
+- Use **+** in the Explorer to create a file or folder at the workspace root. Right-click a folder to create an item inside it.
 - The explorer bundles [Material Icon Theme artwork](src/Sharpcode/Assets/Material/NOTICE.md) for common languages, config files, and project folders.
 - Right-click in the editor for clipboard commands, find and replace, line comments, navigation, and agent actions for the active file or selection.
 - Middle-click an editor tab to close it. Sharpcode prompts before closing a tab with unsaved changes.
+- If another program changes an open file, use **File → Reload from Disk** to read the latest version. To keep your edits in a separate file, use **Save As** before reloading.
 - The Agent pane starts hidden by default. Use **Agent** in the toolbar to open it. Narrow windows show one side panel at a time, and Sharpcode remembers which panels you have enabled.
 
 ## Appearance
@@ -118,9 +120,17 @@ Sharpcode handles UTF-8 and BOM-marked UTF-16/32. It preserves encoding and line
 ```sh
 dotnet test Sharpcode.slnx --configuration Release
 dotnet publish src/Sharpcode --configuration Release --runtime win-x64 --self-contained true -o artifacts/publish/win-x64
+python packaging/archive.py win-x64 artifacts/publish/win-x64 artifacts
+python packaging/smoke.py artifacts/Sharpcode-win-x64.zip
 ```
 
-Use `linux-x64` or `osx-arm64` for the other desktop targets. Run `Sharpcode.exe` on Windows or `./Sharpcode` on Linux or macOS from the published directory. The desktop workflow builds, tests, and archives each platform on its corresponding GitHub Actions runner. The macOS artifact contains an unsigned, unnotarized `Sharpcode.app` bundle. [Avalonia macOS deployment](https://docs.avaloniaui.net/docs/deployment/macos)
+Use `linux-x64` or `osx-arm64` in the publish and archive commands for the other desktop targets. Run the startup smoke test with that platform's archive on its native host. Linux needs an X11 display or `xvfb-run -a` before the smoke command.
+
+The desktop workflow builds and tests each target on its native runner, then starts Sharpcode from the extracted archive with a temporary workspace. Find the archives in the workflow artifacts. After a GitHub release is published and all three targets pass, the workflow also attaches the archives and `SHA256SUMS` to that release.
+
+- **Windows x64**. Extract `Sharpcode-win-x64.zip` and start `Sharpcode/Sharpcode.exe`. The executable is unsigned.
+- **Linux x64**. Extract `Sharpcode-linux-x64.tar.gz` and run `./Sharpcode/Sharpcode` from the extraction directory.
+- **macOS Apple silicon**. Extract `Sharpcode-osx-arm64.tar.gz` and open `Sharpcode.app` in Finder. The app bundle is unsigned and unnotarized. [Avalonia macOS deployment](https://docs.avaloniaui.net/docs/deployment/macos)
 
 ## License
 
